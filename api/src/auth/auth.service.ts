@@ -44,7 +44,12 @@ export class AuthService {
       },
     });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role,
+      user.tenantId,
+    );
 
     return {
       user: {
@@ -72,7 +77,12 @@ export class AuthService {
       throw new UnauthorizedException("Invalid credentials");
     }
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role,
+      user.tenantId,
+    );
 
     return {
       user: {
@@ -105,9 +115,14 @@ export class AuthService {
     return user;
   }
 
-  private async generateTokens(userId: string, email: string, role: string) {
+  private async generateTokens(
+    userId: string,
+    email: string,
+    role: string,
+    tenantId: string,
+  ) {
     const accessToken = await this.jwt.signAsync(
-      { sub: userId, email, role },
+      { sub: userId, email, role, tenantId },
       {
         secret: this.config.get<string>("JWT_SECRET"),
         expiresIn: this.config.get<string>("JWT_ACCESS_EXPIRES_IN", "15m") as any,
@@ -139,7 +154,12 @@ export class AuthService {
         throw new UnauthorizedException("User not found");
       }
 
-      const tokens = await this.generateTokens(user.id, user.email, user.role);
+      const tokens = await this.generateTokens(
+        user.id,
+        user.email,
+        user.role,
+        user.tenantId,
+      );
 
       return {
         user: {
