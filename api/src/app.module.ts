@@ -5,6 +5,11 @@ import { AuthModule } from "./auth/auth.module";
 import { IngestModule } from "./ingest/ingest.module";
 import { ClassroomModule } from "./classroom/classroom.module";
 import { EngagementModule } from "./engagement/engagement.module";
+import { CourseModule } from "./course/course.module";
+import { EnrollmentModule } from "./enrollment/enrollment.module";
+import { SessionModule } from "./session/session.module";
+import { AnalyticsModule } from "./analytics/analytics.module";
+import { TenancyModule } from "./tenancy/tenancy.module";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 
@@ -13,9 +18,14 @@ import { AppService } from "./app.service";
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
     AuthModule,
+    TenancyModule,
     IngestModule,
     ClassroomModule,
     EngagementModule,
+    CourseModule,
+    EnrollmentModule,
+    SessionModule,
+    AnalyticsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
