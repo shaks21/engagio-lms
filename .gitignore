@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.env
+*.log
+docker/data/
+api/prisma/dev.db
+.next/
