@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, Logger } from "@nestjs/common";
+import { Injectable, OnModuleInit, Logger, OnModuleDestroy } from "@nestjs/common";
 import { Kafka, Consumer } from "kafkajs";
 import { PrismaService } from "../prisma/prisma.service";
 
@@ -10,10 +10,22 @@ interface ClassroomEventPayload {
   userId: string;
 }
 
+// Event weights for engagement scoring
+const EVENT_WEIGHTS: Record<string, number> = {
+  CHAT: 10,
+  MIC: 20,
+  SCREEN_SHARE: 20,
+  BLUR: -30,
+  JOIN: 5,
+  MOUSE_TRACK: 2,
+  KEYSTROKE: 3,
+};
+
 @Injectable()
-export class EngagementProcessor implements OnModuleInit {
+export class EngagementProcessor implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(EngagementProcessor.name);
   private consumer: Consumer;
+  private snapshotInterval: NodeJS.Timeout;
 
   constructor(private readonly prisma: PrismaService) {
     const kafka = new Kafka({
@@ -24,20 +36,23 @@ export class EngagementProcessor implements OnModuleInit {
   }
 
   async onModuleInit() {
-    // Spin up consumer in background so it does not block app bootstrap
     this.startConsumer().catch((err) => {
-      this.logger.error("Failed to start Kafka consumer (will retry):", err);
+      this.logger.error("Failed to start Kafka consumer:", err);
       this.retryConsumer();
     });
+
+    // Aggregate engagement snapshots every 60 seconds
+    this.snapshotInterval = setInterval(() => this.computeSnapshots(), 60_000);
+  }
+
+  async onModuleDestroy() {
+    clearInterval(this.snapshotInterval);
+    await this.consumer.disconnect();
   }
 
   private async startConsumer() {
     await this.consumer.connect();
     await this.consumer.subscribe({ topic: "classroom-events", fromBeginning: true });
-
-    const TRACKED_TYPES = new Set([
-      "CHAT", "MOUSE_TRACK", "KEYSTROKE", "MIC", "SCREEN_SHARE",
-    ]);
 
     await this.consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
@@ -57,13 +72,6 @@ export class EngagementProcessor implements OnModuleInit {
             payload: event.payload as any,
           },
         });
-
-        if (TRACKED_TYPES.has(event.type)) {
-          await this.prisma.session.update({
-            where: { id: event.sessionId },
-            data: { dwellTime: { increment: 10 } },
-          });
-        }
       },
     });
 
@@ -78,5 +86,49 @@ export class EngagementProcessor implements OnModuleInit {
         this.retryConsumer();
       });
     }, 5000);
+  }
+
+  private async computeSnapshots() {
+    this.logger.log("Computing engagement snapshots for last 60s window...");
+
+    const oneMinAgo = new Date(Date.now() - 60_000);
+
+    // Find all active sessions
+    const activeSessions = await this.prisma.session.findMany({
+      where: { endedAt: null },
+      select: { id: true, userId: true, tenantId: true },
+    });
+
+    for (const session of activeSessions) {
+      // Get events for this session in the last 60s
+      const events = await this.prisma.engagementEvent.findMany({
+        where: {
+          sessionId: session.id,
+          timestamp: { gte: oneMinAgo },
+        },
+        select: { type: true, payload: true },
+      });
+
+      if (events.length === 0) continue;
+
+      // Compute score per user
+      let score = 100; // Start neutral
+      for (const event of events) {
+        const weight = EVENT_WEIGHTS[event.type] ?? 0;
+        score += weight;
+      }
+
+      // Clamp: 0-100
+      score = Math.max(0, Math.min(100, score));
+
+      await this.prisma.engagementSnapshot.create({
+        data: {
+          tenantId: session.tenantId,
+          sessionId: session.id,
+          userId: session.userId,
+          score,
+        },
+      });
+    }
   }
 }

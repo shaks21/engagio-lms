@@ -40,4 +40,25 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getCourseAnalytics(req.tenantId, courseId);
   }
+
+  @Get("users/scores")
+  async getUsersByScore(@Request() req) {
+    return this.analyticsService.getUsersByScore(req.tenantId);
+  }
+
+  @Get("session/:id/history")
+  async getSessionScoreHistory(
+    @Request() req,
+    @Param("id") sessionId: string,
+  ) {
+    return this.analyticsService.getSessionScoreHistory(req.tenantId, sessionId);
+  }
+
+  @Get("session/:id/live-scores")
+  async getSessionLiveScores(
+    @Request() req,
+    @Param("id") sessionId: string,
+  ) {
+    return this.analyticsService.getLiveScores(req.tenantId, sessionId);
+  }
 }

@@ -25,15 +25,16 @@ enum EventType {
 }
 
 model Tenant {
-  id          String     @id @default(uuid())
-  name        String
-  users       User[]
-  courses     Course[]
-  enrollments Enrollment[]
-  sessions    Session[]
-  events      EngagementEvent[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id                    String             @id @default(uuid())
+  name                  String
+  users                 User[]
+  courses               Course[]
+  enrollments           Enrollment[]
+  sessions              Session[]
+  events                EngagementEvent[]
+  engagementSnapshots   EngagementSnapshot[]
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 }
 
 model User {
@@ -118,4 +119,20 @@ model EngagementEvent {
   @@index([sessionId])
   @@index([tenantId, sessionId])
   @@index([timestamp])
+}
+
+model EngagementSnapshot {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  sessionId String
+  userId    String
+  score     Int
+  timestamp DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([sessionId])
+  @@index([userId])
+  @@index([tenantId, sessionId, timestamp])
+  @@index([userId, sessionId])
 }
