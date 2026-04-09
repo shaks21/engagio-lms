@@ -1,6 +1,5 @@
 generator client {
-  provider = "prisma-client"
-  output   = "../node_modules/.prisma/client"
+  provider = "prisma-client-js"
 }
 
 datasource db {
@@ -17,6 +16,7 @@ enum EventType {
   MIC
   CHAT
   BLUR
+  FOCUS
   JOIN
   LEAVE
   MOUSE_TRACK

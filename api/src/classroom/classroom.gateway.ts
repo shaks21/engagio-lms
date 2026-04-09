@@ -42,8 +42,13 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
   async handleDisconnect(client: Socket) {
     this.logger.log(`Client disconnected: ${client.id}`);
     const tenantId = client.data.tenantId as string | undefined;
+    const sessionId = client.data.sessionId as string | undefined;
+
     if (tenantId) {
       this.server.to(tenantId).emit("user-left", { clientId: client.id });
+    }
+    if (sessionId) {
+      this.server.to(`session::${sessionId}`).emit("user-left", { clientId: client.id });
     }
   }
 
@@ -106,6 +111,7 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     const userId = client.data.userId as string | undefined;
 
     if (!tenantId || !sessionId) {
+      this.logger.warn(`Engagement event without context: type=${data.type}, clientId=${client.id}`);
       return { status: "error", message: "Not joined to a classroom" };
     }
 
@@ -116,6 +122,37 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
       payload: data.payload,
       userId: userId || "unknown",
     });
+
+    // Broadcast real-time events to all participants in the session
+    if (data.type === "CHAT") {
+      this.logger.log(`Broadcasting chat message from ${userId} in session ${sessionId}`);
+      this.server.to(`session::${sessionId}`).emit("chat-message", {
+        id: Date.now().toString(),
+        userId,
+        clientId: client.id,
+        userName: userId?.slice(0, 8) || "User",
+        text: data.payload.text || data.payload.message,
+        timestamp: new Date().toISOString(),
+      });
+    } else if (data.type === "MIC") {
+      this.server.to(`session::${sessionId}`).emit("participant-media-update", {
+        userId,
+        clientId: client.id,
+        micActive: data.payload.active,
+      });
+    } else if (data.type === "CAMERA") {
+      this.server.to(`session::${sessionId}`).emit("participant-media-update", {
+        userId,
+        clientId: client.id,
+        cameraActive: data.payload.active,
+      });
+    } else if (data.type === "SCREEN_SHARE") {
+      this.server.to(`session::${sessionId}`).emit("participant-media-update", {
+        userId,
+        clientId: client.id,
+        screenShareActive: data.payload.active,
+      });
+    }
 
     return { status: "ok" };
   }

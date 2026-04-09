@@ -22,7 +22,8 @@ export default function RegisterPage() {
     setSubmitting(true);
 
     try {
-      await axios.post('http://localhost:3000/auth/register', {
+      const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+      await axios.post(`${API}/auth/register`, {
         email,
         password,
         role,
@@ -30,7 +31,7 @@ export default function RegisterPage() {
 
       // After registration, auto-login
       const loginResponse = await axios.post(
-        'http://localhost:3000/auth/login',
+        `${API}/auth/login`,
         { email, password }
       );
 

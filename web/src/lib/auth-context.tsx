@@ -45,6 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
   // Fetch current user on mount
   useEffect(() => {
     const fetchUser = async () => {
@@ -56,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       try {
         const response = await axios.get(
-          'http://localhost:3000/auth/me',
+          `${API}/auth/me`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -78,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const response = await axios.post(
-      'http://localhost:3000/auth/login',
+      `${API}/auth/login`,
       { email, password }
     );
 

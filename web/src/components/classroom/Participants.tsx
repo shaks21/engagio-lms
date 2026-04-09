@@ -2,6 +2,12 @@
 
 import React from 'react';
 
+type MediaState = {
+  micActive: boolean;
+  cameraActive: boolean;
+  screenShareActive: boolean;
+};
+
 interface Participant {
   userId: string;
   clientId: string;
@@ -9,24 +15,27 @@ interface Participant {
   status: 'online' | 'away' | 'offline';
   joinedAt?: Date;
   isHost?: boolean;
+  media?: MediaState;
 }
 
 interface ParticipantsPanelProps {
   participants: Participant[];
   currentUserId: string;
+  showMediaStatus?: boolean;
 }
 
 export default function ParticipantsPanel({
   participants,
   currentUserId,
+  showMediaStatus = false,
 }: ParticipantsPanelProps) {
   return (
-    <div className="w-72 border-l border-gray-200 bg-white flex flex-col h-full">
+    <div className="border-l border-gray-700 flex flex-col h-full">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+      <div className="px-4 py-3 border-b border-gray-700 bg-gray-800">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-gray-800">Participants</h3>
-          <span className="bg-blue-600 text-white text-xs font-medium px-2 py-1 rounded-full">
+          <h3 className="font-semibold text-white">Participants</h3>
+          <span className="bg-blue-600/20 text-blue-400 text-xs font-medium px-2 py-1 rounded-full">
             {participants.length}
           </span>
         </div>
@@ -40,77 +49,85 @@ export default function ParticipantsPanel({
           </div>
         ) : (
           <div className="space-y-2">
-            {participants.map((participant) => (
-              <div
-                key={participant.clientId}
-                className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
-                  participant.userId === currentUserId
-                    ? 'bg-blue-50 border border-blue-200'
-                    : 'bg-gray-50 hover:bg-gray-100'
-                }`}
-              >
-                {/* Left side: avatar + info */}
-                <div className="flex items-center gap-3">
-                  <div className="relative">
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                        participant.userId === currentUserId
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-gray-300 text-gray-700'
-                      }`}
-                    >
-                      {participant.name
-                        ? participant.name.charAt(0).toUpperCase()
-                        : 'U'}
+            {participants.map((participant) => {
+              const media = participant.media || {
+                micActive: false,
+                cameraActive: false,
+                screenShareActive: false,
+              };
+              const isCurrent = participant.userId === currentUserId;
+
+              return (
+                <div
+                  key={participant.clientId}
+                  className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
+                    isCurrent
+                      ? 'bg-blue-600/10 border border-blue-500/30'
+                      : 'bg-gray-700/50'
+                  }`}
+                >
+                  {/* Left: avatar + info */}
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative flex-shrink-0">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                        isCurrent ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-200'
+                      }`}>
+                        {participant.name ? participant.name.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                      <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-gray-800 ${
+                        participant.status === 'online' ? 'bg-green-500'
+                          : participant.status === 'away' ? 'bg-yellow-500'
+                          : 'bg-gray-500'
+                      }`} />
                     </div>
-                    {/* Status indicator */}
-                    <span
-                      className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                        participant.status === 'online'
-                          ? 'bg-green-500'
-                          : participant.status === 'away'
-                          ? 'bg-yellow-500'
-                          : 'bg-gray-400'
-                      }`}
-                    />
-                  </div>
 
-                  {/* Name and role */}
-                  <div className="flex flex-col">
-                    <span
-                      className={`text-sm font-medium ${
-                        participant.userId === currentUserId
-                          ? 'text-blue-700'
-                          : 'text-gray-700'
-                      }`}
-                    >
-                      {participant.name || `User ${participant.userId.slice(0, 6)}`}
-                      {participant.userId === currentUserId && (
-                        <span className="ml-1 text-xs text-blue-500">(You)</span>
-                      )}
-                    </span>
-                    {participant.isHost && (
-                      <span className="text-xs text-amber-600">Host</span>
-                    )}
+                    <div className="flex flex-col min-w-0">
+                      <span className={`text-sm font-medium truncate ${
+                        isCurrent ? 'text-blue-300' : 'text-gray-200'
+                      }`}>
+                        {participant.name || `User ${participant.userId.slice(0, 6)}`}
+                        {isCurrent && <span className="ml-1 text-xs text-blue-400">(You)</span>}
+                      </span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        {participant.isHost && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">Host</span>
+                        )}
+                        {showMediaStatus && (
+                          <>
+                            <span title={media.micActive ? 'Mic On' : 'Mic Off'}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={media.micActive ? '#22c55e' : '#ef4444'} strokeWidth="2">
+                                {media.micActive ? (
+                                  <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></>
+                                ) : (
+                                  <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><line x1="1" y1="1" x2="23" y2="23" /></>
+                                )}
+                              </svg>
+                            </span>
+                            <span title={media.cameraActive ? 'Camera On' : 'Camera Off'}>
+                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={media.cameraActive ? '#22c55e' : '#ef4444'} strokeWidth="2">
+                                {media.cameraActive ? (
+                                  <><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></>
+                                ) : (
+                                  <><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /><line x1="1" y1="1" x2="23" y2="23" /></>
+                                )}
+                              </svg>
+                            </span>
+                            {media.screenShareActive && (
+                              <span title="Screen Sharing">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                                  <path d="M8 21h8" /><path d="M12 17v4" />
+                                </svg>
+                              </span>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
-
-                {/* Status badge */}
-                <div className="flex items-center gap-1">
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${
-                      participant.status === 'online'
-                        ? 'bg-green-100 text-green-700'
-                        : participant.status === 'away'
-                        ? 'bg-yellow-100 text-yellow-700'
-                        : 'bg-gray-100 text-gray-500'
-                    }`}
-                  >
-                    {participant.status}
-                  </span>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

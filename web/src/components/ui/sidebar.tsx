@@ -83,7 +83,7 @@ export default function Sidebar() {
   return (
     <>
       <aside
-        className={`fixed top-0 left-0 z-40 h-full bg-gray-900 text-white transition-all duration-200 ease-in-out flex flex-col ${
+        className={`sticky top-0 h-screen bg-gray-900 text-white transition-all duration-200 ease-in-out flex flex-col shrink-0 ${
           collapsed ? 'w-16' : 'w-56'
         }`}
         aria-label="Sidebar"
@@ -143,14 +143,6 @@ export default function Sidebar() {
           {!collapsed && <>Engagio LMS v0.1</>}
         </div>
       </aside>
-
-      {/* Push content to the right of the sidebar */}
-      <div
-        className={`fixed top-0 left-0 h-full bg-gray-200 ${
-          collapsed ? 'w-16' : 'w-56'
-        }`}
-        aria-hidden="true"
-      />
     </>
   );
 }

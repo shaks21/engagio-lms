@@ -29,6 +29,34 @@ function MicrophoneIcon({ active }: { active: boolean }) {
   );
 }
 
+function CameraIcon({ active }: { active: boolean }) {
+  return (
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {active ? (
+        <>
+          <path d="M23 7l-7 5 7 5V7z" />
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+        </>
+      ) : (
+        <>
+          <path d="M23 7l-7 5 7 5V7z" />
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+          <line x1="1" y1="1" x2="23" y2="23" stroke="red" />
+        </>
+      )}
+    </svg>
+  );
+}
+
 function ScreenShareIcon({ active }: { active: boolean }) {
   return (
     <svg
@@ -88,20 +116,24 @@ function LeaveIcon() {
 
 interface ToolbarProps {
   onToggleMic: (active: boolean) => void;
+  onToggleCamera: (active: boolean) => void;
   onToggleScreenShare: (active: boolean) => void;
   onToggleChat?: () => void;
   onLeave: () => void;
   micActive?: boolean;
+  cameraActive?: boolean;
   screenShareActive?: boolean;
   unreadMessages?: number;
 }
 
 export default function Toolbar({
   onToggleMic,
+  onToggleCamera,
   onToggleScreenShare,
   onToggleChat,
   onLeave,
   micActive = true,
+  cameraActive = false,
   screenShareActive = false,
   unreadMessages = 0,
 }: ToolbarProps) {
@@ -127,6 +159,19 @@ export default function Toolbar({
             title={micActive ? 'Mute Microphone' : 'Unmute Microphone'}
           >
             <MicrophoneIcon active={micActive} />
+          </button>
+
+          {/* Camera */}
+          <button
+            onClick={() => onToggleCamera(!cameraActive)}
+            className={`p-2.5 rounded-lg transition-colors ${
+              cameraActive
+                ? 'bg-green-600 hover:bg-green-700'
+                : 'bg-red-600 hover:bg-red-700'
+            }`}
+            title={cameraActive ? 'Turn Off Camera' : 'Turn On Camera'}
+          >
+            <CameraIcon active={cameraActive} />
           </button>
 
           {/* Screen Share */}
