@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import io, { Socket } from 'socket.io-client';
 import { useAuth } from '@/lib/auth-context';
@@ -38,12 +38,132 @@ export default function ClassroomPage() {
   const [micActive, setMicActive] = useState(true);
   const [cameraActive, setCameraActive] = useState(false);
   const [screenShareActive, setScreenShareActive] = useState(false);
+  const [mediaError, setMediaError] = useState<string | null>(null);
 
-  const { start: startTracking, stop: stopTracking } = useEngagementTracker(socket);
+  // Media streams refs
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const audioTrackRef = useRef<MediaStreamTrack | null>(null);
+  const videoTrackRef = useRef<MediaStreamTrack | null>(null);
+
+  const { start: startTracking, stop: stopTracking, active: trackingActive } = useEngagementTracker(socket);
+  const startTimeRef = useRef(Date.now());
+
+  // Initialize media devices (camera and microphone)
+  const initializeMedia = useCallback(async (enableCamera: boolean = false, enableMic: boolean = true) => {
+    try {
+      const constraints: MediaStreamConstraints = {
+        video: enableCamera ? {
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          facingMode: 'user'
+        } : false,
+        audio: enableMic
+      };
+
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      localStreamRef.current = stream;
+
+      // Store references to tracks for toggling
+      const audioTrack = stream.getAudioTracks()[0];
+      const videoTrack = stream.getVideoTracks()[0];
+      
+      audioTrackRef.current = audioTrack || null;
+      videoTrackRef.current = videoTrack || null;
+
+      // Attach video to preview element
+      if (localVideoRef.current && videoTrack) {
+        localVideoRef.current.srcObject = stream;
+        await localVideoRef.current.play();
+      }
+
+      setMediaError(null);
+      console.log('Media initialized:', { hasAudio: !!audioTrack, hasVideo: !!videoTrack });
+      return stream;
+    } catch (err: any) {
+      console.error('Failed to initialize media:', err);
+      setMediaError(err.message || 'Failed to access camera/microphone');
+      return null;
+    }
+  }, []);
+
+  // Toggle microphone - actually enable/disable the audio track
+  const handleToggleMic = useCallback((active: boolean) => {
+    setMicActive(active);
+    
+    if (audioTrackRef.current) {
+      audioTrackRef.current.enabled = active;
+      console.log('Mic toggled:', active ? 'enabled' : 'disabled');
+    }
+    
+    socket?.emit('engagementEvent', { type: 'MIC', payload: { active } });
+  }, [socket]);
+
+  // Toggle camera - actually start/stop the video track
+  const handleToggleCamera = useCallback(async (active: boolean) => {
+    if (active) {
+      // Turn camera on - start video stream with video enabled
+      if (!localStreamRef.current || !videoTrackRef.current) {
+        // Need to get new stream with video
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { width: 640, height: 480, facingMode: 'user' },
+            audio: micActive 
+          });
+          localStreamRef.current = stream;
+          
+          const newVideoTrack = stream.getVideoTracks()[0];
+          const newAudioTrack = stream.getAudioTracks()[0];
+          videoTrackRef.current = newVideoTrack || null;
+          audioTrackRef.current = newAudioTrack || null;
+          
+          // Attach to video element
+          if (localVideoRef.current) {
+            localVideoRef.current.srcObject = stream;
+            await localVideoRef.current.play();
+          }
+        } catch (err) {
+          console.error('Failed to start camera:', err);
+          setMediaError('Failed to access camera');
+          return;
+        }
+      } else if (videoTrackRef.current) {
+        videoTrackRef.current.enabled = true;
+      }
+    } else {
+      // Turn camera off - disable video track
+      if (videoTrackRef.current) {
+        videoTrackRef.current.enabled = false;
+      }
+    }
+
+    setCameraActive(active);
+    socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active } });
+  }, [socket, micActive]);
+
+  // Toggle screen share
+  const handleToggleScreenShare = useCallback((active: boolean) => {
+    setScreenShareActive(active);
+    socket?.emit('engagementEvent', { type: 'SCREEN_SHARE', payload: { active } });
+  }, [socket]);
+
+  // Track if we've already initialized to prevent duplicates
+  const initializedRef = useRef(false);
 
   // Initialize socket connection
   useEffect(() => {
-    if (!sessionId || !userId || !tenantId) return;
+    // Prevent duplicate initialization
+    if (initializedRef.current) return;
+    initializedRef.current = true;
+
+    // Set loading to false after short timeout (500ms)
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 500);
+
+    if (!sessionId || !userId || !tenantId) {
+      return () => clearTimeout(timer);
+    }
 
     const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws')
       ? `${process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws')}/classroom`
@@ -53,17 +173,23 @@ export default function ClassroomPage() {
     setSocket(newSocket);
 
     newSocket.on('connect', () => {
-      console.log('Socket connected:', newSocket.id);
-      newSocket.emit('joinClassroom', { tenantId, sessionId, courseId: '', userId, classroomCode: sessionId });
+      newSocket.emit('joinClassroom', { 
+        tenantId, 
+        sessionId, 
+        courseId: '', 
+        userId, 
+        classroomCode: sessionId,
+        userName: userName || user?.email || 'Unknown User'
+      });
     });
 
-    newSocket.on('user-joined', (data: { userId: string; clientId: string }) => {
-      setParticipants((prev) => {
-        if (prev.find((p) => p.clientId === data.clientId)) return prev;
+    newSocket.on('user-joined', (data: { userId: string; clientId: string; userName?: string }) => {
+      setParticipants(prev => {
+        if (prev.find(p => p.clientId === data.clientId)) return prev;
         return [...prev, {
           userId: data.userId,
           clientId: data.clientId,
-          name: data.userId.slice(0, 8),
+          name: data.userName || data.userId.slice(0, 8),
           status: 'online',
           media: { micActive: false, cameraActive: false, screenShareActive: false },
         }];
@@ -71,10 +197,9 @@ export default function ClassroomPage() {
     });
 
     newSocket.on('user-left', (data: { clientId: string }) => {
-      setParticipants((prev) => prev.filter((p) => p.clientId !== data.clientId));
+      setParticipants(prev => prev.filter(p => p.clientId !== data.clientId));
     });
 
-    // Listen for media updates from other participants
     newSocket.on('participant-media-update', (data: {
       userId: string;
       clientId: string;
@@ -82,8 +207,8 @@ export default function ClassroomPage() {
       cameraActive?: boolean;
       screenShareActive?: boolean;
     }) => {
-      setParticipants((prev) =>
-        prev.map((p) =>
+      setParticipants(prev =>
+        prev.map(p =>
           p.clientId === data.clientId || p.userId === data.userId
             ? {
                 ...p,
@@ -99,46 +224,60 @@ export default function ClassroomPage() {
       );
     });
 
-    // Initialize self as participant with default media state
-    const self: Participant = {
-      userId,
-      clientId: '',
-      name: userName || user?.email || 'You',
-      status: 'online',
-      isHost: true,
-      media: { micActive: true, cameraActive: false, screenShareActive: false },
+    // Initialize self participant when socket connects
+    if (newSocket.connected && newSocket.id) {
+      const self: Participant = {
+        userId,
+        clientId: newSocket.id,
+        name: userName || user?.email || 'You',
+        status: 'online',
+        isHost: true,
+        media: { micActive: true, cameraActive: false, screenShareActive: false },
+      };
+      setParticipants([self]);
+    }
+    
+    return () => { 
+      clearTimeout(timer); 
+      newSocket.disconnect();
+      initializedRef.current = false;
     };
-
-    newSocket.on('connect', () => {
-      self.clientId = newSocket.id || '';
-      setParticipants([{ ...self, clientId: newSocket.id || '' }]);
-    });
-
-    const timer = setTimeout(() => setLoading(false), 1000);
-    return () => { clearTimeout(timer); newSocket.disconnect(); };
   }, [sessionId, userId, tenantId, userName, user]);
 
+  // Initialize media on mount (mic on by default) - non-blocking
+  useEffect(() => {
+    if (!loading) {
+      // Don't block - initialize media in background
+      initializeMedia(false, true).catch(err => {
+        console.warn('Media initialization failed:', err);
+      });
+    }
+  }, [loading, initializeMedia]);
+
+  // Start engagement tracking when socket connects
+  useEffect(() => {
+    if (socket && userId && tenantId && !trackingActive) {
+      startTracking();
+    }
+    return () => {
+      if (trackingActive) {
+        stopTracking();
+      }
+    };
+  }, [socket, userId, tenantId, startTracking, stopTracking, trackingActive]);
+
   const handleLeave = useCallback(() => {
+    // Clean up media streams
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop());
+      localStreamRef.current = null;
+    }
+    
     socket?.emit('engagementEvent', { type: 'LEAVE', payload: { sessionId } });
     stopTracking();
     socket?.disconnect();
     router.push('/dashboard/classroom');
   }, [socket, sessionId, stopTracking, router]);
-
-  const handleToggleMic = useCallback((active: boolean) => {
-    setMicActive(active);
-    socket?.emit('engagementEvent', { type: 'MIC', payload: { active } });
-  }, [socket]);
-
-  const handleToggleCamera = useCallback((active: boolean) => {
-    setCameraActive(active);
-    socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active } });
-  }, [socket]);
-
-  const handleToggleScreenShare = useCallback((active: boolean) => {
-    setScreenShareActive(active);
-    socket?.emit('engagementEvent', { type: 'SCREEN_SHARE', payload: { active } });
-  }, [socket]);
 
   if (loading) {
     return (
@@ -206,8 +345,15 @@ export default function ClassroomPage() {
             )}
           </div>
         </div>
-        <Timer />
+        <Timer startTime={new Date(startTimeRef.current)} />
       </div>
+
+      {/* Error display */}
+      {mediaError && (
+        <div className="bg-red-600/20 border-b border-red-600 px-4 py-2 text-red-400 text-sm">
+          Media Error: {mediaError}
+        </div>
+      )}
 
       {/* Toolbar with camera support */}
       <Toolbar
@@ -224,14 +370,23 @@ export default function ClassroomPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Video grid / main area */}
         <div className="flex-1 min-w-0 flex items-center justify-center bg-gray-900 relative overflow-auto">
-          {/* My camera preview */}
-          {cameraActive && (
-            <div className="absolute bottom-4 left-4 w-48 h-36 bg-gray-700 rounded-lg overflow-hidden border-2 border-gray-600 z-10">
+          {/* My camera preview - bottom left corner */}
+          <div className="absolute bottom-4 left-4 w-48 h-36 bg-gray-700 rounded-lg overflow-hidden border-2 border-gray-600 z-10">
+            {cameraActive ? (
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+              />
+            ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
-                📹 Camera Preview
+                Camera Off
               </div>
-            </div>
-          )}
+            )}
+          </div>
+
           {/* Participant video grid */}
           <div className="w-full max-w-[900px] p-6 mx-auto">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
@@ -266,17 +421,14 @@ export default function ClassroomPage() {
         {/* Right sidebar with participants */}
         <div className="w-72 h-full border-l border-gray-700 overflow-hidden">
           <ParticipantsPanel
-            participants={participants.map((p) => ({
-              ...p,
-              media: p.media,
-            }))}
+            participants={participants}
             currentUserId={userId || ''}
             showMediaStatus={true}
           />
         </div>
       </div>
 
-      {/* Chat overlay */}
+      {/* Chat overlay - positioned on left to avoid overlapping sidebar */}
       {socket && (
         <Chat
           userId={userId || ''}

@@ -56,9 +56,16 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
   async handleJoinRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody()
-    data: { tenantId: string; sessionId: string; courseId: string; userId: string; classroomCode?: string },
+    data: { 
+      tenantId: string; 
+      sessionId: string; 
+      courseId: string; 
+      userId: string; 
+      userName?: string; 
+      classroomCode?: string 
+    },
   ) {
-    const { tenantId, sessionId, courseId, userId, classroomCode } = data;
+    const { tenantId, sessionId, courseId, userId, userName, classroomCode } = data;
 
     client.data.tenantId = tenantId;
     client.data.sessionId = sessionId;
@@ -67,7 +74,7 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     client.join(tenantId);
     client.join(`session::${sessionId}`);
 
-    this.logger.log(`User ${userId} joined tenant ${tenantId}, session ${sessionId}`);
+    this.logger.log(`User ${userId} (${userName}) joined tenant ${tenantId}, session ${sessionId}`);
 
     // Upsert session
     try {
@@ -109,6 +116,7 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     const tenantId = client.data.tenantId as string | undefined;
     const sessionId = client.data.sessionId as string | undefined;
     const userId = client.data.userId as string | undefined;
+    const userName = client.data.userName as string | undefined;
 
     if (!tenantId || !sessionId) {
       this.logger.warn(`Engagement event without context: type=${data.type}, clientId=${client.id}`);
@@ -130,7 +138,7 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
         id: Date.now().toString(),
         userId,
         clientId: client.id,
-        userName: userId?.slice(0, 8) || "User",
+        userName: userName || userId?.slice(0, 8) || "User",
         text: data.payload.text || data.payload.message,
         timestamp: new Date().toISOString(),
       });

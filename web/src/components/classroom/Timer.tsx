@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface TimerProps {
   startTime?: Date;
@@ -20,16 +20,16 @@ function formatDuration(ms: number): string {
 }
 
 export default function Timer({ startTime, className = '' }: TimerProps) {
-  const startTimeRef = startTime ? new Date(startTime).getTime() : Date.now();
-  const [elapsed, setElapsed] = useState(Date.now() - startTimeRef);
+  const startTimeRef = useRef(startTime ? new Date(startTime).getTime() : Date.now());
+  const [elapsed, setElapsed] = useState(Date.now() - startTimeRef.current);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setElapsed(Date.now() - startTimeRef);
+      setElapsed(Date.now() - startTimeRef.current);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [startTimeRef]);
+  }, []); // Empty deps - only run once
 
   return (
     <div className={`font-mono text-sm flex items-center gap-2 ${className}`}>
