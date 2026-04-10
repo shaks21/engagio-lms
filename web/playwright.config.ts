@@ -11,6 +11,18 @@ export default defineConfig({
     baseURL: 'http://164.68.119.230:3001',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    launchOptions: {
+      args: [
+        '--use-fake-ui-for-media-stream',
+        '--use-fake-device-for-media-stream',
+        '--use-file-for-fake-video-capture=/dev/null',
+        '--autoplay-policy=no-user-gesture-required',
+        '--disable-web-security',
+      ],
+    },
+    contextOptions: {
+      permissions: ['camera', 'microphone'],
+    },
   },
   projects: [
     {
