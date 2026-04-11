@@ -61,6 +61,11 @@ export default function ClassroomPage() {
         audio: enableMic
       };
 
+      // Check if mediaDevices is available
+      if (!navigator.mediaDevices) {
+        throw new Error('Media devices not available in this browser');
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
 
@@ -82,7 +87,8 @@ export default function ClassroomPage() {
       return stream;
     } catch (err: any) {
       console.error('Failed to initialize media:', err);
-      setMediaError(err.message || 'Failed to access camera/microphone');
+      const errorMessage = err?.message || err?.name || 'Failed to access camera/microphone';
+      setMediaError(errorMessage);
       return null;
     }
   }, []);
@@ -106,6 +112,12 @@ export default function ClassroomPage() {
       if (!localStreamRef.current || !videoTrackRef.current) {
         // Need to get new stream with video
         try {
+          // Check if mediaDevices is available
+          if (!navigator.mediaDevices) {
+            setMediaError('Media devices not available in this browser');
+            return;
+          }
+          
           const stream = await navigator.mediaDevices.getUserMedia({ 
             video: { width: 640, height: 480, facingMode: 'user' },
             audio: micActive 
@@ -156,12 +168,22 @@ export default function ClassroomPage() {
     if (initializedRef.current) return;
     initializedRef.current = true;
 
-    // Set loading to false after short timeout (500ms)
+    // Set loading to false after short timeout (500ms) - ALWAYS, even if auth not ready
+    // This prevents getting stuck on "Joining classroom" screen
     const timer = setTimeout(() => {
       setLoading(false);
     }, 500);
 
-    if (!sessionId || !userId || !tenantId) {
+    // If sessionId is missing, we can't proceed - but still stop loading
+    if (!sessionId) {
+      console.warn('No sessionId found, redirecting to dashboard');
+      router.push('/dashboard/classroom');
+      return () => clearTimeout(timer);
+    }
+
+    // If auth is not ready yet, wait for it - but still stop loading spinner
+    if (!userId || !tenantId) {
+      console.log('Auth not ready yet, showing classroom anyway');
       return () => clearTimeout(timer);
     }
 
