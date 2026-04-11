@@ -13,9 +13,9 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     launchOptions: {
       args: [
+        // Fake media stream for headless testing
         '--use-fake-ui-for-media-stream',
         '--use-fake-device-for-media-stream',
-        '--use-file-for-fake-video-capture=/dev/null',
         '--autoplay-policy=no-user-gesture-required',
         '--disable-web-security',
       ],

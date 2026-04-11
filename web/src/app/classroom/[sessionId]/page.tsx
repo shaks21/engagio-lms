@@ -9,6 +9,7 @@ import Toolbar from '@/components/classroom/Toolbar';
 import ParticipantsPanel from '@/components/classroom/Participants';
 import Chat from '@/components/classroom/Chat';
 import Timer from '@/components/classroom/Timer';
+import { useWebRTC } from '@/hooks/useWebRTC';
 
 type MediaState = {
   micActive: boolean;
@@ -48,6 +49,14 @@ export default function ClassroomPage() {
 
   const { start: startTracking, stop: stopTracking, active: trackingActive } = useEngagementTracker(socket);
   const startTimeRef = useRef(Date.now());
+
+  // WebRTC for peer-to-peer video/audio
+  const { peers: remotePeers, createOffer } = useWebRTC({
+    socket,
+    sessionId,
+    localStream: localStreamRef.current,
+    clientId: socket?.id || '',
+  });
 
   // Initialize media devices (camera and microphone)
   const initializeMedia = useCallback(async (enableCamera: boolean = false, enableMic: boolean = true) => {
@@ -103,47 +112,71 @@ export default function ClassroomPage() {
 
   // Toggle camera - actually start/stop the video track
   const handleToggleCamera = useCallback(async (active: boolean) => {
+    console.log('handleToggleCamera called with:', active);
+    
     if (active) {
       // Turn camera on - start video stream with video enabled
-      if (!localStreamRef.current || !videoTrackRef.current) {
-        // Need to get new stream with video
-        try {
-          // Try to get user media - will fail gracefully on HTTP
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: { width: 640, height: 480, facingMode: 'user' },
-            audio: micActive 
-          });
-          localStreamRef.current = stream;
-          
-          const newVideoTrack = stream.getVideoTracks()[0];
-          const newAudioTrack = stream.getAudioTracks()[0];
-          videoTrackRef.current = newVideoTrack || null;
-          audioTrackRef.current = newAudioTrack || null;
-          
-          // Attach to video element
+      try {
+        console.log('Requesting camera with video+audio...');
+        // Request BOTH video and audio to ensure mic works
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: { width: 640, height: 480, facingMode: 'user' },
+          audio: true 
+        });
+        
+        console.log('Stream obtained:', stream.id, 'tracks:', stream.getTracks().map(t => t.kind));
+        
+        // Store stream
+        localStreamRef.current = stream;
+        
+        const newVideoTrack = stream.getVideoTracks()[0];
+        const newAudioTrack = stream.getAudioTracks()[0];
+        
+        console.log('Video track:', newVideoTrack?.id, 'enabled:', newVideoTrack?.enabled);
+        console.log('Audio track:', newAudioTrack?.id, 'enabled:', newAudioTrack?.enabled);
+        
+        videoTrackRef.current = newVideoTrack || null;
+        audioTrackRef.current = newAudioTrack || null;
+        
+        // CRITICAL: Must set cameraActive BEFORE attaching to video to ensure element exists
+        setCameraActive(true);
+        
+        // Attach to video element - need to wait for re-render
+        setTimeout(() => {
           if (localVideoRef.current) {
+            console.log('Attaching stream to video element');
             localVideoRef.current.srcObject = stream;
-            await localVideoRef.current.play();
+            localVideoRef.current.play().catch(err => console.error('Play error:', err));
+          } else {
+            console.warn('localVideoRef.current is null - video element not mounted');
           }
-        } catch (err: any) {
-          console.error('Failed to start camera:', err);
-          const errorMessage = err?.message || err?.name || 'Failed to access camera';
-          setMediaError(errorMessage);
-          return;
-        }
-      } else if (videoTrackRef.current) {
-        videoTrackRef.current.enabled = true;
+        }, 100);
+        
+      } catch (err: any) {
+        console.error('Failed to start camera:', err);
+        const errorMessage = err?.message || err?.name || 'Failed to access camera';
+        setMediaError(errorMessage);
+        return;
       }
     } else {
-      // Turn camera off - disable video track
+      // Turn camera off - stop tracks
       if (videoTrackRef.current) {
-        videoTrackRef.current.enabled = false;
+        videoTrackRef.current.stop();
+        videoTrackRef.current = null;
       }
+      if (audioTrackRef.current) {
+        audioTrackRef.current.stop();
+        audioTrackRef.current = null;
+      }
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+      setCameraActive(false);
     }
 
-    setCameraActive(active);
     socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active } });
-  }, [socket, micActive]);
+  }, [socket]);
 
   // Toggle screen share
   const handleToggleScreenShare = useCallback((active: boolean) => {
@@ -268,6 +301,23 @@ export default function ClassroomPage() {
     }
   }, [loading, initializeMedia]);
 
+  // Create WebRTC offer when a new user joins (initiate connection)
+  useEffect(() => {
+    if (!socket || !localStreamRef.current) return;
+
+    const handleUserJoined = (data: { userId: string; clientId: string; userName?: string }) => {
+      console.log('New user joined, creating WebRTC offer for:', data.clientId);
+      // Create offer to connect with the new peer
+      createOffer(data.clientId);
+    };
+
+    socket.on('user-joined', handleUserJoined);
+
+    return () => {
+      socket.off('user-joined', handleUserJoined);
+    };
+  }, [socket, createOffer]);
+
   // Start engagement tracking when socket connects
   useEffect(() => {
     if (socket && userId && tenantId && !trackingActive) {
@@ -384,50 +434,88 @@ export default function ClassroomPage() {
       <div className="flex-1 flex overflow-hidden">
         {/* Video grid / main area */}
         <div className="flex-1 min-w-0 flex items-center justify-center bg-gray-900 relative overflow-auto">
-          {/* My camera preview - bottom left corner */}
-          <div className="absolute bottom-4 left-4 w-48 h-36 bg-gray-700 rounded-lg overflow-hidden border-2 border-gray-600 z-10">
-            {cameraActive ? (
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="w-full h-full object-cover"
-              />
-            ) : (
+          {/* My camera preview - bottom left corner (only show when not in main grid) */}
+          {!cameraActive && (
+            <div className="absolute bottom-4 left-4 w-48 h-36 bg-gray-700 rounded-lg overflow-hidden border-2 border-gray-600 z-10">
               <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
                 Camera Off
               </div>
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Participant video grid */}
+          {/* Participant video grid - includes self and remote participants */}
           <div className="w-full max-w-[900px] p-6 mx-auto">
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
-              {participants.map((p) => (
-                <div key={p.clientId} className="relative bg-gray-800 rounded-xl aspect-video flex items-center justify-center overflow-hidden">
-                  <div className="text-center">
-                    <div className="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center mx-auto mb-2 text-2xl">
-                      {p.name?.charAt(0).toUpperCase() || 'U'}
-                    </div>
-                    <p className="text-sm font-medium">{p.name || 'User'}</p>
-                  </div>
-                  {/* Media indicators on participant card */}
-                  <div className="absolute top-2 left-2 flex gap-1">
-                    {p.media.micActive ? (
-                      <span className="bg-green-500/80 px-1.5 py-0.5 rounded text-[10px]">🎤</span>
-                    ) : (
-                      <span className="bg-red-500/80 px-1.5 py-0.5 rounded text-[10px]">🔇</span>
-                    )}
-                    {p.media.cameraActive && (
-                      <span className="bg-green-500/80 px-1.5 py-0.5 rounded text-[10px]">📹</span>
-                    )}
-                    {p.media.screenShareActive && (
-                      <span className="bg-blue-500/80 px-1.5 py-0.5 rounded text-[10px]">🖥️</span>
-                    )}
+              {/* Show self in main grid if camera is active */}
+              {cameraActive && localStreamRef.current && (
+                <div className="relative bg-gray-800 rounded-xl aspect-video flex items-center justify-center overflow-hidden">
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs">
+                    You {micActive ? '🎤' : '🔇'}
                   </div>
                 </div>
+              )}
+              
+              {/* Remote participants with WebRTC streams */}
+              {remotePeers.map((peer) => (
+                <div key={peer.peerId} className="relative bg-gray-800 rounded-xl aspect-video flex items-center justify-center overflow-hidden">
+                  {peer.remoteStream ? (
+                    <>
+                      <video
+                        ref={(el) => {
+                          if (el && peer.remoteStream) {
+                            el.srcObject = peer.remoteStream;
+                          }
+                        }}
+                        autoPlay
+                        playsInline
+                        className="w-full h-full object-cover"
+                      />
+                      <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs">
+                        {participants.find(p => p.clientId === peer.peerId)?.name || 'Participant'}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="text-center">
+                      <div className="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center mx-auto mb-2 text-2xl">
+                        {(participants.find(p => p.clientId === peer.peerId)?.name || 'U').charAt(0).toUpperCase()}
+                      </div>
+                      <p className="text-sm font-medium">{participants.find(p => p.clientId === peer.peerId)?.name || 'Connecting...'}</p>
+                    </div>
+                  )}
+                </div>
               ))}
+              
+              {/* Other participants without WebRTC connection yet (show avatar) */}
+              {participants
+                .filter(p => p.clientId !== socket?.id && !remotePeers.some(peer => peer.peerId === p.clientId))
+                .map((p) => (
+                  <div key={p.clientId} className="relative bg-gray-800 rounded-xl aspect-video flex items-center justify-center overflow-hidden">
+                    <div className="text-center">
+                      <div className="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center mx-auto mb-2 text-2xl">
+                        {p.name?.charAt(0).toUpperCase() || 'U'}
+                      </div>
+                      <p className="text-sm font-medium">{p.name || 'User'}</p>
+                    </div>
+                    {/* Media indicators */}
+                    <div className="absolute top-2 left-2 flex gap-1">
+                      {p.media.micActive ? (
+                        <span className="bg-green-500/80 px-1.5 py-0.5 rounded text-[10px]">🎤</span>
+                      ) : (
+                        <span className="bg-red-500/80 px-1.5 py-0.5 rounded text-[10px]">🔇</span>
+                      )}
+                      {p.media.cameraActive && (
+                        <span className="bg-green-500/80 px-1.5 py-0.5 rounded text-[10px]">📹</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         </div>

@@ -147,6 +147,17 @@ test.describe('Hardware Integrity Tests', () => {
   });
 
   test('4. Video element properly configured - video element exists when camera enabled', async ({ page }) => {
+    // Inject mock navigator.mediaDevices before page loads
+    await page.addInitScript(() => {
+      const mockGetUserMedia = async () => new MediaStream();
+      (window as any).navigator.mediaDevices = {
+        getUserMedia: mockGetUserMedia,
+        enumerateDevices: async () => [],
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      };
+    });
+    
     await enterClassroom(page);
     await page.waitForTimeout(2000);
     
@@ -179,6 +190,17 @@ test.describe('Hardware Integrity Tests', () => {
   });
 
   test('5. Media cleanup - leaving classroom stops media tracks', async ({ page }) => {
+    // Inject mock navigator.mediaDevices before page loads
+    await page.addInitScript(() => {
+      const mockGetUserMedia = async () => new MediaStream();
+      (window as any).navigator.mediaDevices = {
+        getUserMedia: mockGetUserMedia,
+        enumerateDevices: async () => [],
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      };
+    });
+    
     await enterClassroom(page);
     await page.waitForTimeout(2000);
     

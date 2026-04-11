@@ -164,4 +164,61 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     return { status: "ok" };
   }
+
+  // WebRTC Signaling: Receive offer from a peer and forward to target
+  @SubscribeMessage("webrtc-offer")
+  async handleWebRTCOffer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { targetClientId: string; offer: RTCSessionDescriptionInit; sessionId: string },
+  ) {
+    const { targetClientId, offer, sessionId } = data;
+    this.logger.log(`Forwarding WebRTC offer from ${client.id} to ${targetClientId}`);
+    
+    // Forward offer to target peer
+    this.server.to(targetClientId).emit("webrtc-offer", {
+      offer,
+      senderClientId: client.id,
+      sessionId,
+    });
+    
+    return { status: "ok" };
+  }
+
+  // WebRTC Signaling: Receive answer from a peer and forward to target
+  @SubscribeMessage("webrtc-answer")
+  async handleWebRTCAnswer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { targetClientId: string; answer: RTCSessionDescriptionInit; sessionId: string },
+  ) {
+    const{ targetClientId, answer, sessionId } = data;
+    this.logger.log(`Forwarding WebRTC answer from ${client.id} to ${targetClientId}`);
+    
+    // Forward answer to target peer
+    this.server.to(targetClientId).emit("webrtc-answer", {
+      answer,
+      senderClientId: client.id,
+      sessionId,
+    });
+    
+    return { status: "ok" };
+  }
+
+  // WebRTC Signaling: Receive ICE candidate from a peer and forward to target
+  @SubscribeMessage("webrtc-ice-candidate")
+  async handleWebRTCIceCandidate(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { targetClientId: string; candidate: RTCIceCandidateInit; sessionId: string },
+  ) {
+    const{ targetClientId, candidate, sessionId } = data;
+    this.logger.log(`Forwarding ICE candidate from ${client.id} to ${targetClientId}`);
+    
+    // Forward ICE candidate to target peer
+    this.server.to(targetClientId).emit("webrtc-ice-candidate", {
+      candidate,
+      senderClientId: client.id,
+      sessionId,
+    });
+    
+    return { status: "ok" };
+  }
 }
