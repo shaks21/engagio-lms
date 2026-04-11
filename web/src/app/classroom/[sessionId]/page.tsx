@@ -61,11 +61,7 @@ export default function ClassroomPage() {
         audio: enableMic
       };
 
-      // Check if mediaDevices is available
-      if (!navigator.mediaDevices) {
-        throw new Error('Media devices not available in this browser');
-      }
-
+      // Try to get user media - will fail gracefully on HTTP/non-secure contexts
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
 
@@ -112,12 +108,7 @@ export default function ClassroomPage() {
       if (!localStreamRef.current || !videoTrackRef.current) {
         // Need to get new stream with video
         try {
-          // Check if mediaDevices is available
-          if (!navigator.mediaDevices) {
-            setMediaError('Media devices not available in this browser');
-            return;
-          }
-          
+          // Try to get user media - will fail gracefully on HTTP
           const stream = await navigator.mediaDevices.getUserMedia({ 
             video: { width: 640, height: 480, facingMode: 'user' },
             audio: micActive 
@@ -134,9 +125,10 @@ export default function ClassroomPage() {
             localVideoRef.current.srcObject = stream;
             await localVideoRef.current.play();
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error('Failed to start camera:', err);
-          setMediaError('Failed to access camera');
+          const errorMessage = err?.message || err?.name || 'Failed to access camera';
+          setMediaError(errorMessage);
           return;
         }
       } else if (videoTrackRef.current) {
