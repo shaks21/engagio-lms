@@ -54,7 +54,7 @@ export default function ClassroomPage() {
   const { peers: remotePeers, createOffer } = useWebRTC({
     socket,
     sessionId,
-    localStream: localStreamRef.current,
+    localStreamRef,
     clientId: socket?.id || '',
   });
 

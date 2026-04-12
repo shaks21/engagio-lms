@@ -12,18 +12,21 @@ type PeerConnection = {
 type UseWebRTCOptions = {
   socket: Socket | null;
   sessionId: string;
-  localStream: MediaStream | null;
+  localStreamRef: React.RefObject<MediaStream | null>;
   clientId: string;
 };
 
-export function useWebRTC({ socket, sessionId, localStream, clientId }: UseWebRTCOptions) {
+export function useWebRTC({ socket, sessionId, localStreamRef, clientId }: UseWebRTCOptions) {
   const [peers, setPeers] = useState<Map<string, PeerConnection>>(new Map());
   const peersRef = useRef<Map<string, PeerConnection>>(new Map());
   
-  // ICE servers configuration (using Google's public STUN servers)
+  // ICE servers configuration with STUN and TURN for production
   const iceServers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun2.l.google.com:19302' },
+    // TURN servers - add your own for production (example using Metered.ca free tier)
+    // { urls: 'turn:global.turn.twilio.com:3478', username: 'username', credential: 'password' },
   ];
 
   // Create a new peer connection
@@ -31,9 +34,9 @@ export function useWebRTC({ socket, sessionId, localStream, clientId }: UseWebRT
     const pc = new RTCPeerConnection({ iceServers });
 
     // Add local tracks to the connection
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        pc.addTrack(track, localStream);
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        pc.addTrack(track, localStreamRef.current);
       });
     }
 
@@ -81,7 +84,7 @@ export function useWebRTC({ socket, sessionId, localStream, clientId }: UseWebRT
     };
 
     return pc;
-  }, [localStream, socket, sessionId]);
+  }, [localStreamRef, socket, sessionId]);
 
   // Create offer (initiator side)
   const createOffer = useCallback(async (peerId: string) => {
@@ -189,13 +192,13 @@ export function useWebRTC({ socket, sessionId, localStream, clientId }: UseWebRT
 
   // When local stream changes, add tracks to all peer connections
   useEffect(() => {
-    if (!localStream) return;
+    if (!localStreamRef.current) return;
     
     peersRef.current.forEach((peer) => {
       const pc = peer.connection;
       // Replace sender tracks with new stream
       const senders = pc.getSenders();
-      const tracks = localStream.getTracks();
+      const tracks = localStreamRef.current.getTracks();
       
       senders.forEach((sender, index) => {
         if (tracks[index]) {
@@ -203,7 +206,7 @@ export function useWebRTC({ socket, sessionId, localStream, clientId }: UseWebRT
         }
       });
     });
-  }, [localStream]);
+  }, [localStreamRef]);
 
   // Clean up on unmount
   useEffect(() => {

@@ -157,6 +157,7 @@ export default function Toolbar({
                 : 'bg-red-600 hover:bg-red-700'
             }`}
             title={micActive ? 'Mute Microphone' : 'Unmute Microphone'}
+            aria-label={micActive ? 'Mute microphone' : 'Unmute microphone'}
           >
             <MicrophoneIcon active={micActive} />
           </button>
@@ -170,6 +171,7 @@ export default function Toolbar({
                 : 'bg-red-600 hover:bg-red-700'
             }`}
             title={cameraActive ? 'Turn Off Camera' : 'Turn On Camera'}
+            aria-label={cameraActive ? 'Turn off camera' : 'Turn on camera'}
           >
             <CameraIcon active={cameraActive} />
           </button>
@@ -183,6 +185,7 @@ export default function Toolbar({
                 : 'bg-gray-700 hover:bg-gray-600'
             }`}
             title={screenShareActive ? 'Stop Sharing' : 'Share Screen'}
+            aria-label={screenShareActive ? 'Stop screen share' : 'Share screen'}
           >
             <ScreenShareIcon active={screenShareActive} />
           </button>
