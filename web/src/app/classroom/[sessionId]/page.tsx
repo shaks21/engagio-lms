@@ -320,10 +320,22 @@ export default function ClassroomPage() {
 
   // Start engagement tracking when socket connects
   useEffect(() => {
-    if (socket && userId && tenantId && !trackingActive) {
+    if (!socket || !userId || !tenantId || trackingActive) return;
+
+    const onConnect = () => {
+      console.log('Socket connected, starting engagement tracking');
+      startTracking();
+    };
+
+    socket.on('connect', onConnect);
+
+    // If already connected, start immediately
+    if (socket.connected) {
       startTracking();
     }
+
     return () => {
+      socket.off('connect', onConnect);
       if (trackingActive) {
         stopTracking();
       }
