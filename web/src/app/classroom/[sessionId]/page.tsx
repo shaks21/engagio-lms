@@ -533,11 +533,10 @@ export default function ClassroomPage() {
         </div>
 
         {/* Right sidebar with participants */}
-        <div className="w-72 h-full border-l border-gray-700 overflow-hidden">
+        <div className="hidden md:block w-72 h-full border-l border-gray-700 overflow-hidden">
           <ParticipantsPanel
             participants={participants}
             currentUserId={userId || ''}
-            showMediaStatus={true}
           />
         </div>
       </div>
