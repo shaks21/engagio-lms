@@ -3,8 +3,8 @@ import React from 'react';
 function MicrophoneIcon({ active }: { active: boolean }) {
   return (
     <svg
-      width="20"
-      height="20"
+      width="28"
+      height="28"
       viewBox="0 0 24 24"
       fill="none"
       stroke={active ? 'currentColor' : 'currentColor'}
@@ -32,8 +32,8 @@ function MicrophoneIcon({ active }: { active: boolean }) {
 function CameraIcon({ active }: { active: boolean }) {
   return (
     <svg
-      width="20"
-      height="20"
+      width="28"
+      height="28"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -60,8 +60,8 @@ function CameraIcon({ active }: { active: boolean }) {
 function ScreenShareIcon({ active }: { active: boolean }) {
   return (
     <svg
-      width="20"
-      height="20"
+      width="28"
+      height="28"
       viewBox="0 0 24 24"
       fill="none"
       stroke={active ? 'currentColor' : 'currentColor'}
@@ -69,7 +69,7 @@ function ScreenShareIcon({ active }: { active: boolean }) {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+      <rect x="2" y="3" width="28" height="14" rx="2" ry="2" />
       {active ? (
         <>
           <path d="M8 18h8" />
@@ -98,8 +98,8 @@ function ChatIcon({ count }: { count: number }) {
 function LeaveIcon() {
   return (
     <svg
-      width="20"
-      height="20"
+      width="28"
+      height="28"
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
@@ -151,7 +151,7 @@ export default function Toolbar({
           {/* Microphone */}
           <button
             onClick={() => onToggleMic(!micActive)}
-            className={`p-2.5 rounded-lg transition-colors ${
+            className={`p-3 rounded-lg transition-colors ${
               micActive
                 ? 'bg-green-600 hover:bg-green-700'
                 : 'bg-red-600 hover:bg-red-700'
@@ -165,7 +165,7 @@ export default function Toolbar({
           {/* Camera */}
           <button
             onClick={() => onToggleCamera(!cameraActive)}
-            className={`p-2.5 rounded-lg transition-colors ${
+            className={`p-3 rounded-lg transition-colors ${
               cameraActive
                 ? 'bg-green-600 hover:bg-green-700'
                 : 'bg-red-600 hover:bg-red-700'
@@ -179,7 +179,7 @@ export default function Toolbar({
           {/* Screen Share */}
           <button
             onClick={() => onToggleScreenShare(!screenShareActive)}
-            className={`p-2.5 rounded-lg transition-colors ${
+            className={`p-3 rounded-lg transition-colors ${
               screenShareActive
                 ? 'bg-green-600 hover:bg-green-700'
                 : 'bg-gray-700 hover:bg-gray-600'
@@ -194,7 +194,7 @@ export default function Toolbar({
           {onToggleChat && (
             <button
               onClick={onToggleChat}
-              className="p-2.5 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors"
+              className="p-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors"
               title="Toggle Chat"
             >
               <ChatIcon count={unreadMessages} />

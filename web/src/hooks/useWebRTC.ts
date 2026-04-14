@@ -34,9 +34,10 @@ export function useWebRTC({ socket, sessionId, localStreamRef, clientId }: UseWe
     const pc = new RTCPeerConnection({ iceServers });
 
     // Add local tracks to the connection
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach(track => {
-        pc.addTrack(track, localStreamRef.current);
+    const current = localStreamRef.current;
+    if (current) {
+      current.getTracks().forEach(track => {
+        pc.addTrack(track, current);
       });
     }
 
@@ -192,14 +193,13 @@ export function useWebRTC({ socket, sessionId, localStreamRef, clientId }: UseWe
 
   // When local stream changes, add tracks to all peer connections
   useEffect(() => {
-    if (!localStreamRef.current) return;
-    
+    const current = localStreamRef.current;
+    if (!current) return;
     peersRef.current.forEach((peer) => {
       const pc = peer.connection;
       // Replace sender tracks with new stream
       const senders = pc.getSenders();
-      const tracks = localStreamRef.current.getTracks();
-      
+      const tracks = current.getTracks();
       senders.forEach((sender, index) => {
         if (tracks[index]) {
           sender.replaceTrack(tracks[index]);
