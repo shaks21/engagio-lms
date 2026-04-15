@@ -152,6 +152,11 @@ export default function ClassroomPage() {
           }
         }, 100);
         
+        // Notify socket that media is now available - this will trigger peers to connect
+        socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active: true } });
+        // Also emit a custom event to signal media readiness for WebRTC
+        socket?.emit('media-ready', { hasVideo: true, hasAudio: true });
+        
       } catch (err: any) {
         console.error('Failed to start camera:', err);
         const errorMessage = err?.message || err?.name || 'Failed to access camera';
@@ -173,6 +178,9 @@ export default function ClassroomPage() {
         localStreamRef.current = null;
       }
       setCameraActive(false);
+      
+      // Notify socket that media is no longer available
+      socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active: false } });
     }
 
     socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active } });
@@ -271,6 +279,16 @@ export default function ClassroomPage() {
       );
     });
 
+    // Listen for media-ready events to establish WebRTC connections
+    newSocket.on('media-ready', (data: { clientId: string; hasVideo: boolean; hasAudio: boolean }) => {
+      console.log('Peer ready for media:', data.clientId, data);
+      // If we have local media, create a WebRTC connection to this peer
+      if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
+        console.log('Creating WebRTC offer for media-ready peer:', data.clientId);
+        createOffer(data.clientId);
+      }
+    });
+
     // Initialize self participant when socket connects
     if (newSocket.connected && newSocket.id) {
       const self: Participant = {
@@ -301,14 +319,19 @@ export default function ClassroomPage() {
     }
   }, [loading, initializeMedia]);
 
-  // Create WebRTC offer when a new user joins (initiate connection)
+  // Create WebRTC offer when a new user joins (initiate connection) - only if we have media
   useEffect(() => {
-    if (!socket || !localStreamRef.current) return;
+    if (!socket) return;
 
     const handleUserJoined = (data: { userId: string; clientId: string; userName?: string }) => {
-      console.log('New user joined, creating WebRTC offer for:', data.clientId);
-      // Create offer to connect with the new peer
-      createOffer(data.clientId);
+      console.log('New user joined:', data.clientId);
+      // Only create offer if we have local media (camera or mic active)
+      if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
+        console.log('Creating WebRTC offer for:', data.clientId, 'with tracks:', localStreamRef.current.getTracks().map(t => t.kind));
+        createOffer(data.clientId);
+      } else {
+        console.log('No local media yet, skipping WebRTC offer for:', data.clientId);
+      }
     };
 
     socket.on('user-joined', handleUserJoined);

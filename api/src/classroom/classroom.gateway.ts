@@ -221,4 +221,23 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     
     return { status: "ok" };
   }
+
+  // Broadcast media-ready event to all participants in the session
+  @SubscribeMessage("media-ready")
+  async handleMediaReady(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { hasVideo: boolean; hasAudio: boolean },
+  ) {
+    const sessionId = client.data.sessionId as string | undefined;
+    if (sessionId) {
+      this.logger.log(`Client ${client.id} is media-ready in session ${sessionId}`);
+      // Broadcast to all other participants in the session
+      this.server.to(`session::${sessionId}`).emit("media-ready", {
+        clientId: client.id,
+        hasVideo: data.hasVideo,
+        hasAudio: data.hasAudio,
+      });
+    }
+    return { status: "ok" };
+  }
 }

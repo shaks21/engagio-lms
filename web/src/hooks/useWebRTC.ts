@@ -25,8 +25,6 @@ export function useWebRTC({ socket, sessionId, localStreamRef, clientId }: UseWe
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    // TURN servers - add your own for production (example using Metered.ca free tier)
-    // { urls: 'turn:global.turn.twilio.com:3478', username: 'username', credential: 'password' },
   ];
 
   // Create a new peer connection
@@ -34,12 +32,22 @@ export function useWebRTC({ socket, sessionId, localStreamRef, clientId }: UseWe
     const pc = new RTCPeerConnection({ iceServers });
 
     // Add local tracks to the connection
-    const current = localStreamRef.current;
-    if (current) {
-      current.getTracks().forEach(track => {
-        pc.addTrack(track, current);
-      });
-    }
+    const addLocalTracks = () => {
+      const current = localStreamRef.current;
+      if (current) {
+        current.getTracks().forEach(track => {
+          // Check if track is already added to avoid duplicates
+          const existingSender = pc.getSenders().find(s => s.track?.kind === track.kind);
+          if (existingSender) {
+            existingSender.replaceTrack(track);
+          } else {
+            pc.addTrack(track, current);
+          }
+        });
+      }
+    };
+    
+    addLocalTracks();
 
     // Handle incoming tracks
     pc.ontrack = (event) => {
@@ -191,22 +199,38 @@ export function useWebRTC({ socket, sessionId, localStreamRef, clientId }: UseWe
     };
   }, [socket, handleOffer, handleAnswer, handleIceCandidate]);
 
-  // When local stream changes, add tracks to all peer connections
+  // When local stream changes, add tracks to all peer connections and renegotiate
   useEffect(() => {
     const current = localStreamRef.current;
     if (!current) return;
+    
     peersRef.current.forEach((peer) => {
       const pc = peer.connection;
-      // Replace sender tracks with new stream
-      const senders = pc.getSenders();
-      const tracks = current.getTracks();
-      senders.forEach((sender, index) => {
-        if (tracks[index]) {
-          sender.replaceTrack(tracks[index]);
+      
+      // Add or replace tracks for this peer
+      current.getTracks().forEach(track => {
+        const sender = pc.getSenders().find(s => s.track?.kind === track.kind);
+        if (sender) {
+          // Replace existing track
+          sender.replaceTrack(track);
+        } else {
+          // Add new track and trigger renegotiation
+          pc.addTrack(track, current);
+          // Renegotiate to send the new track
+          pc.createOffer()
+            .then(offer => pc.setLocalDescription(offer))
+            .then(() => {
+              socket?.emit('webrtc-offer', {
+                targetClientId: peer.peerId,
+                offer: pc.localDescription,
+                sessionId,
+              });
+            })
+            .catch(err => console.error('Renegotiation failed:', err));
         }
       });
     });
-  }, [localStreamRef]);
+  }, [localStreamRef, socket, sessionId]);
 
   // Clean up on unmount
   useEffect(() => {
