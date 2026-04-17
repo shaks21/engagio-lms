@@ -11,6 +11,7 @@ export default defineConfig({
     baseURL: 'http://164.68.119.230:3001',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    video: 'retain-on-failure',  // Capture video on test failure
     launchOptions: {
       args: [
         // Fake media stream for headless testing
@@ -24,6 +25,8 @@ export default defineConfig({
       permissions: ['camera', 'microphone'],
     },
   },
+  // Video output directory
+  outputDir: 'test-results/videos',
   projects: [
     {
       name: 'chromium',

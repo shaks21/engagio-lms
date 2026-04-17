@@ -6,7 +6,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test:e2e": "playwright test",
+    "test:sync": "playwright test tests/classroom-sync.spec.ts",
+    "test:sync:ui": "playwright test tests/classroom-sync.spec.ts --ui"
   },
   "dependencies": {
     "axios": "^1.14.0",
@@ -19,10 +22,14 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",
+    "@prisma/adapter-pg": "^7.0.0",
     "@tailwindcss/postcss": "^4.2.2",
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.11.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "pg": "^8.11.0",
+    "prisma": "^7.0.0",
     "typescript": "^5.7.0"
   }
 }
