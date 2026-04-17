@@ -1,6 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { Socket } from 'socket.io-client';
+import { useSocket } from '@/lib/socket-context';
 
 type MediaState = {
   micActive: boolean;
@@ -29,6 +31,49 @@ export default function ParticipantsPanel({
   currentUserId,
   showMediaStatus = false,
 }: ParticipantsPanelProps) {
+  const { socket } = useSocket();
+  const [mediaStates, setMediaStates] = useState<Record<string, MediaState>>({});
+
+  // Listen for media updates from other participants
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleMediaUpdate = (data: any) => {
+      setMediaStates((prev) => ({
+        ...prev,
+        [data.userId]: {
+          micActive: data.micActive ?? prev[data.userId]?.micActive ?? false,
+          cameraActive: data.cameraActive ?? prev[data.userId]?.cameraActive ?? false,
+          screenShareActive: data.screenShareActive ?? prev[data.userId]?.screenShareActive ?? false,
+        },
+      }));
+    };
+
+    socket.on('participant-media-update', handleMediaUpdate);
+    socket.on('participant-engagement-update', handleMediaUpdate);
+
+    return () => {
+      socket.off('participant-media-update', handleMediaUpdate);
+      socket.off('participant-engagement-update', handleMediaUpdate);
+    };
+  }, [socket]);
+
+  const getMediaState = (userId: string) => {
+    if (userId === currentUserId) {
+      // Local participant - use actual state from MediaManager
+      return mediaStates[userId] || {
+        micActive: true,
+        cameraActive: false,
+        screenShareActive: false,
+      };
+    }
+    return mediaStates[userId] || {
+      micActive: false,
+      cameraActive: false,
+      screenShareActive: false,
+    };
+  };
+
   return (
     <div className="border-l border-gray-700 flex flex-col h-full">
       {/* Header */}
@@ -50,11 +95,7 @@ export default function ParticipantsPanel({
         ) : (
           <div className="space-y-2">
             {participants.map((participant) => {
-              const media = participant.media || {
-                micActive: false,
-                cameraActive: false,
-                screenShareActive: false,
-              };
+              const media = getMediaState(participant.userId);
               const isCurrent = participant.userId === currentUserId;
 
               return (
@@ -92,35 +133,32 @@ export default function ParticipantsPanel({
                         {participant.isHost && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">Host</span>
                         )}
-                        {showMediaStatus && (
-                          <>
-                            <span title={media.micActive ? 'Mic On' : 'Mic Off'}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={media.micActive ? '#22c55e' : '#ef4444'} strokeWidth="2">
-                                {media.micActive ? (
-                                  <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></>
-                                ) : (
-                                  <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><line x1="1" y1="1" x2="23" y2="23" /></>
-                                )}
-                              </svg>
-                            </span>
-                            <span title={media.cameraActive ? 'Camera On' : 'Camera Off'}>
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={media.cameraActive ? '#22c55e' : '#ef4444'} strokeWidth="2">
-                                {media.cameraActive ? (
-                                  <><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></>
-                                ) : (
-                                  <><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /><line x1="1" y1="1" x2="23" y2="23" /></>
-                                )}
-                              </svg>
-                            </span>
-                            {media.screenShareActive && (
-                              <span title="Screen Sharing">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-                                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                                  <path d="M8 21h8" /><path d="M12 17v4" />
-                                </svg>
-                              </span>
+                        {/* Media indicators */}
+                        <span title={media.micActive ? 'Mic On' : 'Mic Off'}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={media.micActive ? '#22c55e' : '#ef4444'} strokeWidth="2">
+                            {media.micActive ? (
+                              <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></>
+                            ) : (
+                              <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><line x1="1" y1="1" x2="23" y2="23" /></>
                             )}
-                          </>
+                          </svg>
+                        </span>
+                        <span title={media.cameraActive ? 'Camera On' : 'Camera Off'}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={media.cameraActive ? '#22c55e' : '#ef4444'} strokeWidth="2">
+                            {media.cameraActive ? (
+                              <><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></>
+                            ) : (
+                              <><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /><line x1="1" y1="1" x2="23" y2="23" /></>
+                            )}
+                          </svg>
+                        </span>
+                        {media.screenShareActive && (
+                          <span title="Screen Sharing">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
+                              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
+                              <path d="M8 21h8" /><path d="M12 17v4" />
+                            </svg>
+                          </span>
                         )}
                       </div>
                     </div>

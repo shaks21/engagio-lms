@@ -14,9 +14,12 @@ interface ClassroomEventPayload {
 const EVENT_WEIGHTS: Record<string, number> = {
   CHAT: 10,
   MIC: 20,
+  CAMERA: 20,
   SCREEN_SHARE: 20,
   BLUR: -30,
+  FOCUS: 0,
   JOIN: 5,
+  LEAVE: 0,
   MOUSE_TRACK: 2,
   KEYSTROKE: 3,
 };

@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../prisma/prisma.service";
+import { EventType } from "@prisma/client";
 
 @Injectable()
 export class AnalyticsService {
@@ -81,19 +82,15 @@ export class AnalyticsService {
     return { activeSessions, liveEvents, totalUsers, timestamp: new Date() };
   }
 
-  // HEATMAP: Get latest engagement score per user for the teacher dashboard
   async getUsersByScore(tenantId: string) {
     const latestScores = await this.prisma.engagementSnapshot.findMany({
       where: { tenantId },
       orderBy: { timestamp: "desc" },
     });
 
-    // Deduplicate by userId, keep latest
-    const seen = new Map<string, typeof latestScores[0]>();
+    const seen = new Map<string, any>();
     for (const snap of latestScores) {
-      if (!seen.has(snap.userId)) {
-        seen.set(snap.userId, snap);
-      }
+      if (!seen.has(snap.userId)) seen.set(snap.userId, snap);
     }
 
     const userIds = [...seen.keys()];
@@ -113,21 +110,16 @@ export class AnalyticsService {
     }));
   }
 
-  // SESSION SCORE HISTORY: for Recharts line graph
   async getSessionScoreHistory(tenantId: string, sessionId: string) {
-    const session = await this.prisma.session.findFirst({
-      where: { id: sessionId, tenantId },
-    });
+    const session = await this.prisma.session.findFirst({ where: { id: sessionId, tenantId } });
     if (!session) throw new NotFoundException("Session not found");
 
-    // Get score snapshots ordered by time
     const snapshots = await this.prisma.engagementSnapshot.findMany({
       where: { sessionId },
       orderBy: { timestamp: "asc" },
       select: { userId: true, score: true, timestamp: true },
     });
 
-    // Build per-user time series and aggregate class average
     const byTime = new Map<string, number[]>();
     for (const snap of snapshots) {
       const key = snap.timestamp.toISOString();
@@ -140,7 +132,6 @@ export class AnalyticsService {
       score: Math.round(scores.reduce((a, b) => a + b, 0) / scores.length),
     }));
 
-    // Per-user data
     const byUser = new Map<string, { email: string; history: { time: string; score: number }[] }>();
     for (const snap of snapshots) {
       if (!byUser.has(snap.userId)) {
@@ -149,7 +140,6 @@ export class AnalyticsService {
       byUser.get(snap.userId)!.history.push({ time: snap.timestamp.toISOString(), score: snap.score });
     }
 
-    // Fill in emails
     const allUserIds = [...byUser.keys()];
     if (allUserIds.length > 0) {
       const users = await this.prisma.user.findMany({
@@ -174,7 +164,7 @@ export class AnalyticsService {
       orderBy: { timestamp: "desc" },
     });
 
-    const seen = new Map<string, typeof latest[0]>();
+    const seen = new Map();
     for (const snap of latest) {
       if (!seen.has(snap.userId)) seen.set(snap.userId, snap);
     }
@@ -192,5 +182,17 @@ export class AnalyticsService {
       score: s.score,
       color: s.score > 70 ? "green" : s.score >= 40 ? "yellow" : "red",
     }));
+  }
+
+  async getSessionFocusEvents(tenantId: string, sessionId: string) {
+    return await this.prisma.engagementEvent.findMany({
+      where: {
+        sessionId,
+        tenantId,
+        type: { in: ["FOCUS", "BLUR"] as EventType[] },
+      },
+      orderBy: { timestamp: "desc" },
+      select: { id: true, session: { select: { userId: true } }, type: true, timestamp: true },
+    });
   }
 }

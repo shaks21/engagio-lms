@@ -7,15 +7,17 @@ import { useAuth } from '@/lib/auth-context';
 import { useEngagementTracker } from '@/hooks/useEngagementTracker';
 import Toolbar from '@/components/classroom/Toolbar';
 import ParticipantsPanel from '@/components/classroom/Participants';
+import { useWebRTC } from "@/hooks/useWebRTC";
 import Chat from '@/components/classroom/Chat';
 import Timer from '@/components/classroom/Timer';
-import { useWebRTC } from '@/hooks/useWebRTC';
 
 type MediaState = {
   micActive: boolean;
   cameraActive: boolean;
   screenShareActive: boolean;
 };
+
+type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'failed';
 
 type Participant = {
   userId: string;
@@ -34,7 +36,14 @@ export default function ClassroomPage() {
   const { user, tenantId, userId, userName } = useAuth();
 
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [myClientId, setMyClientId] = useState<string>(''); // Stable clientId from server
   const [participants, setParticipants] = useState<Participant[]>([]);
+  const [connectionStates, setConnectionStates] = useState<Record<string, ConnectionState>>({});
+  const mediaManagerRef = useRef<any>(null);
+  if (!mediaManagerRef.current) {
+    mediaManagerRef.current = new (require('@/lib/MediaManager')).MediaManager();
+  }
+  const mediaManager = mediaManagerRef.current;
   const [loading, setLoading] = useState(true);
   const [micActive, setMicActive] = useState(true);
   const [cameraActive, setCameraActive] = useState(false);
@@ -50,12 +59,14 @@ export default function ClassroomPage() {
   const { start: startTracking, stop: stopTracking, active: trackingActive } = useEngagementTracker(socket);
   const startTimeRef = useRef(Date.now());
 
-  // WebRTC for peer-to-peer video/audio
+  // WebRTC for peer-to-peer video/audio - use stable clientId from server
   const { peers: remotePeers, createOffer } = useWebRTC({
     socket,
     sessionId,
-    localStreamRef,
-    clientId: socket?.id || '',
+    mediaManager,
+    connectionStates,
+    setConnectionStates,
+    clientId: myClientId || '', // Use stable clientId from server
   });
 
   // Initialize media devices (camera and microphone)
@@ -154,8 +165,8 @@ export default function ClassroomPage() {
         
         // Notify socket that media is now available - this will trigger peers to connect
         socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active: true } });
-        // Also emit a custom event to signal media readiness for WebRTC
-        socket?.emit('media-ready', { hasVideo: true, hasAudio: true });
+        // Also emit a custom event to signal media readiness for WebRTC using STABLE clientId
+        socket?.emit('media-ready', { clientId: myClientId, hasVideo: true, hasAudio: true });
         
       } catch (err: any) {
         console.error('Failed to start camera:', err);
@@ -181,10 +192,11 @@ export default function ClassroomPage() {
       
       // Notify socket that media is no longer available
       socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active: false } });
+      socket?.emit('media-ready', { clientId: myClientId, hasVideo: false, hasAudio: false });
     }
 
     socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active } });
-  }, [socket]);
+  }, [socket, myClientId]);
 
   // Toggle screen share
   const handleToggleScreenShare = useCallback((active: boolean) => {
@@ -228,6 +240,7 @@ export default function ClassroomPage() {
     setSocket(newSocket);
 
     newSocket.on('connect', () => {
+      console.log('Socket connected, joining classroom...');
       newSocket.emit('joinClassroom', { 
         tenantId, 
         sessionId, 
@@ -238,9 +251,46 @@ export default function ClassroomPage() {
       });
     });
 
+    // Handle join response with current participants (HYDRATION)
+    newSocket.on('classroom-joined', (data: { 
+      status: string; 
+      clientId: string; 
+      currentParticipants: Array<{ 
+        clientId: string; 
+        userId: string; 
+        userName?: string; 
+        joinedAt: string;
+        mediaState: { hasVideo: boolean; hasAudio: boolean; isScreenSharing: boolean };
+      }> 
+    }) => {
+      console.log('classroom-joined response:', data);
+      console.log('My stable clientId:', data.clientId);
+      
+      // Set our stable clientId for use in WebRTC
+      setMyClientId(data.clientId);
+      
+      // Hydrate with existing participants (includes self from server)
+      const hydrated: Participant[] = data.currentParticipants.map(p => ({
+        userId: p.userId,
+        clientId: p.clientId,
+        name: p.userName || p.userId.slice(0, 8),
+        status: 'online' as const,
+        joinedAt: new Date(p.joinedAt),
+        media: { 
+          micActive: p.mediaState?.hasAudio ?? false, 
+          cameraActive: p.mediaState?.hasVideo ?? false, 
+          screenShareActive: p.mediaState?.isScreenSharing ?? false 
+        },
+        isHost: p.userId === userId, // Mark self as host
+      }));
+      
+      setParticipants(hydrated);
+    });
+
     newSocket.on('user-joined', (data: { userId: string; clientId: string; userName?: string }) => {
+      console.log('user-joined event:', data);
       setParticipants(prev => {
-        if (prev.find(p => p.clientId === data.clientId)) return prev;
+        if (prev.find(p => p.clientId === data.clientId || p.userId === data.userId)) return prev;
         return [...prev, {
           userId: data.userId,
           clientId: data.clientId,
@@ -251,17 +301,45 @@ export default function ClassroomPage() {
       });
     });
 
-    newSocket.on('user-left', (data: { clientId: string }) => {
-      setParticipants(prev => prev.filter(p => p.clientId !== data.clientId));
+    newSocket.on('user-left', (data: { clientId: string; userId?: string }) => {
+      console.log('user-left event:', data);
+      setParticipants(prev => prev.filter(p => p.clientId !== data.clientId && p.userId !== data.userId));
+    });
+
+    newSocket.on('participant-joined-media', (data: { 
+      clientId: string; 
+      userId?: string; 
+      hasVideo: boolean; 
+      hasAudio: boolean 
+    }) => {
+      console.log('participant-joined-media:', data);
+      // Update participant's media state
+      setParticipants(prev => 
+        prev.map(p =>
+          p.clientId === data.clientId || p.userId === data.userId
+            ? {
+                ...p,
+                media: {
+                  ...p.media,
+                  ...(data.hasVideo !== undefined ? { cameraActive: data.hasVideo } : {}),
+                  ...(data.hasAudio !== undefined ? { micActive: data.hasAudio } : {}),
+                },
+              }
+            : p
+        )
+      );
     });
 
     newSocket.on('participant-media-update', (data: {
-      userId: string;
+      userId?: string;
       clientId: string;
       micActive?: boolean;
       cameraActive?: boolean;
       screenShareActive?: boolean;
+      hasVideo?: boolean;
+      hasAudio?: boolean;
     }) => {
+      console.log('participant-media-update:', data);
       setParticipants(prev =>
         prev.map(p =>
           p.clientId === data.clientId || p.userId === data.userId
@@ -272,6 +350,8 @@ export default function ClassroomPage() {
                   ...(data.micActive !== undefined ? { micActive: data.micActive } : {}),
                   ...(data.cameraActive !== undefined ? { cameraActive: data.cameraActive } : {}),
                   ...(data.screenShareActive !== undefined ? { screenShareActive: data.screenShareActive } : {}),
+                  ...(data.hasVideo !== undefined ? { cameraActive: data.hasVideo } : {}),
+                  ...(data.hasAudio !== undefined ? { micActive: data.hasAudio } : {}),
                 },
               }
             : p
@@ -279,35 +359,39 @@ export default function ClassroomPage() {
       );
     });
 
-    // Listen for media-ready events to establish WebRTC connections
+    // Listen for participant-joined-media events to trigger WebRTC connections
+    newSocket.on('participant-joined-media', (data: { 
+      clientId: string; 
+      userId?: string; 
+      hasVideo: boolean; 
+      hasAudio: boolean 
+    }) => {
+      console.log('participant-joined-media:', data);
+      // If we have local media, create a WebRTC connection to this peer
+      if (localStreamRef.current && localStreamRef.current.getTracks().length > 0 && data.clientId !== myClientId) {
+        console.log('Creating WebRTC offer for participant-joined-media:', data.clientId);
+        createOffer(data.clientId);
+      }
+    });
+
+    // Legacy: Listen for media-ready events to establish WebRTC connections
     newSocket.on('media-ready', (data: { clientId: string; hasVideo: boolean; hasAudio: boolean }) => {
-      console.log('Peer ready for media:', data.clientId, data);
+      console.log('Peer ready for media:', data, 'my stream:', localStreamRef.current?.getTracks().length);
+      // Ignore our own media-ready events
+      if (data.clientId === myClientId) return;
+      
       // If we have local media, create a WebRTC connection to this peer
       if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
         console.log('Creating WebRTC offer for media-ready peer:', data.clientId);
         createOffer(data.clientId);
       }
     });
-
-    // Initialize self participant when socket connects
-    if (newSocket.connected && newSocket.id) {
-      const self: Participant = {
-        userId,
-        clientId: newSocket.id,
-        name: userName || user?.email || 'You',
-        status: 'online',
-        isHost: true,
-        media: { micActive: true, cameraActive: false, screenShareActive: false },
-      };
-      setParticipants([self]);
-    }
-    
     return () => { 
       clearTimeout(timer); 
       newSocket.disconnect();
       initializedRef.current = false;
     };
-  }, [sessionId, userId, tenantId, userName, user]);
+  }, [sessionId, userId, tenantId, userName, user, createOffer]);
 
   // Initialize media on mount (mic on by default) - non-blocking
   useEffect(() => {
