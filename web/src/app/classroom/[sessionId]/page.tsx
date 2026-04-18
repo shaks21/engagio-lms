@@ -207,6 +207,10 @@ export default function ClassroomPage() {
   // Track if we've already initialized to prevent duplicates
   const initializedRef = useRef(false);
 
+  // Store createOffer in ref to prevent infinite loop
+  const createOfferRef = useRef(createOffer);
+  createOfferRef.current = createOffer;
+
   // Initialize socket connection
   useEffect(() => {
     // Prevent duplicate initialization
@@ -370,7 +374,7 @@ export default function ClassroomPage() {
       // If we have local media, create a WebRTC connection to this peer
       if (localStreamRef.current && localStreamRef.current.getTracks().length > 0 && data.clientId !== myClientId) {
         console.log('Creating WebRTC offer for participant-joined-media:', data.clientId);
-        createOffer(data.clientId);
+        createOfferRef.current(data.clientId);
       }
     });
 
@@ -383,7 +387,7 @@ export default function ClassroomPage() {
       // If we have local media, create a WebRTC connection to this peer
       if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
         console.log('Creating WebRTC offer for media-ready peer:', data.clientId);
-        createOffer(data.clientId);
+        createOfferRef.current(data.clientId);
       }
     });
     return () => { 
@@ -391,7 +395,7 @@ export default function ClassroomPage() {
       newSocket.disconnect();
       initializedRef.current = false;
     };
-  }, [sessionId, userId, tenantId, userName, user, createOffer]);
+  }, [sessionId, userId, tenantId, userName]);
 
   // Initialize media on mount (mic on by default) - non-blocking
   useEffect(() => {
@@ -412,7 +416,7 @@ export default function ClassroomPage() {
       // Only create offer if we have local media (camera or mic active)
       if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
         console.log('Creating WebRTC offer for:', data.clientId, 'with tracks:', localStreamRef.current.getTracks().map(t => t.kind));
-        createOffer(data.clientId);
+        createOfferRef.current(data.clientId);
       } else {
         console.log('No local media yet, skipping WebRTC offer for:', data.clientId);
       }
