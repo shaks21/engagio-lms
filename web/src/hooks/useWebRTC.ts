@@ -42,25 +42,27 @@ export function useWebRTC({
   // Track pending local offers to detect collisions
   const pendingLocalOfferRef = useRef<Set<string>>(new Set());
 
-  // ICE servers with TURN fallback for NAT traversal
+  // ICE servers - STUN only for now (TURN can cause crashes if server unavailable)
   const iceServers: RTCIceServer[] = useMemo(() => [
-    // Google STUN servers
+    // Google STUN servers - reliable and free
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    // OpenRelay TURN server (free, no auth required for basic usage)
-    { 
-      urls: 'turn:openrelay.metered.ca:80',
-      credential: 'openrelayproject',
-    },
-    { 
-      urls: 'turn:openrelay.metered.ca:443',
-      credential: 'openrelayproject',
-    },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
   ], []);
 
   const createPeerConnection = useCallback((peerId: string, initiator: boolean = true): RTCPeerConnection => {
-    const pc = new RTCPeerConnection({ iceServers });
+    // Wrap RTCPeerConnection constructor in try-catch to prevent crashes from bad ICE servers
+    let pc: RTCPeerConnection;
+    try {
+      pc = new RTCPeerConnection({ iceServers });
+    } catch (err) {
+      console.error(`❌ Failed to create RTCPeerConnection for ${peerId}:`, err);
+      // Fallback to empty config (let browser use default STUN)
+      console.log('🔄 Retrying with empty ICE servers config...');
+      pc = new RTCPeerConnection({});
+    }
 
     // Determine polite peer status - smaller clientId is polite
     const myId = clientId || '';
