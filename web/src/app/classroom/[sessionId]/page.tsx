@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useEngagementTracker } from '@/hooks/useEngagementTracker';
 import Toolbar from '@/components/classroom/Toolbar';
 import ParticipantsPanel from '@/components/classroom/Participants';
+import RemoteVideo from '@/components/classroom/RemoteVideo';
 import { useWebRTC } from "@/hooks/useWebRTC";
 import Chat from '@/components/classroom/Chat';
 import Timer from '@/components/classroom/Timer';
@@ -640,34 +641,14 @@ export default function ClassroomPage() {
                 </div>
               )}
               
-              {/* Remote participants with WebRTC streams */}
+              {/* Remote participants with WebRTC streams - using RemoteVideo component */}
               {remotePeers.map((peer) => (
-                <div key={peer.peerId} className="relative bg-gray-800 rounded-xl aspect-video flex items-center justify-center overflow-hidden">
-                  {peer.remoteStream ? (
-                    <>
-                      <video
-                        ref={(el) => {
-                          if (el && peer.remoteStream) {
-                            el.srcObject = peer.remoteStream;
-                          }
-                        }}
-                        autoPlay
-                        playsInline
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs">
-                        {participants.find(p => p.clientId === peer.peerId)?.name || 'Participant'}
-                      </div>
-                    </>
-                  ) : (
-                    <div className="text-center">
-                      <div className="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center mx-auto mb-2 text-2xl">
-                        {(participants.find(p => p.clientId === peer.peerId)?.name || 'U').charAt(0).toUpperCase()}
-                      </div>
-                      <p className="text-sm font-medium">{participants.find(p => p.clientId === peer.peerId)?.name || 'Connecting...'}</p>
-                    </div>
-                  )}
-                </div>
+                <RemoteVideo 
+                  key={peer.peerId}
+                  peerId={peer.peerId}
+                  stream={peer.remoteStream}
+                  participantName={participants.find(p => p.clientId === peer.peerId)?.name || 'Participant'}
+                />
               ))}
               
               {/* Other participants without WebRTC connection yet (show avatar) */}

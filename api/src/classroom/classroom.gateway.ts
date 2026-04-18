@@ -300,14 +300,28 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     
     const currentParticipants = Array.from(currentParticipantsMap.values());
 
-    // EMIT: Send classroom-ready with full participant list to the JOINING user directly
-    // This is the key fix - explicitly emit the event to the client
+    // EMIT: Send classroom-joined with full participant list to the JOINING user directly
     this.server.to(client.id).emit("classroom-joined", { 
       status: "ok", 
       message: "joined classroom",
       clientId,
+      currentParticipantCount: knownParticipants.length + 1, // +1 for self
       currentParticipants
     });
+
+    // CRITICAL: Tell the NEW user about EXISTING participants who have media
+    // This triggers them to create WebRTC offers TO those participants
+    for (const p of knownParticipants) {
+      if (p.mediaState.hasAudio || p.mediaState.hasVideo) {
+        this.logger.log(`Notifying new user about participant ${p.userId} with media: video=${p.mediaState.hasVideo}, audio=${p.mediaState.hasAudio}`);
+        this.server.to(client.id).emit("participant-joined-media", {
+          clientId: p.clientId,
+          userId: p.userId,
+          hasVideo: p.mediaState.hasVideo,
+          hasAudio: p.mediaState.hasAudio,
+        });
+      }
+    }
 
     return { status: "ok" };
   }
