@@ -77,6 +77,7 @@ export default function ClassroomPage() {
     socket,
     sessionId,
     mediaManager,
+    localStreamRef,
     connectionStates,
     setConnectionStates,
     clientId: myClientId || '', // Use stable clientId from server

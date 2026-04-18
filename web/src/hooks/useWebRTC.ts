@@ -17,6 +17,7 @@ type UseWebRTCProps = {
   socket: Socket | null;
   sessionId: string;
   mediaManager: MediaManager;
+  localStreamRef: React.MutableRefObject<MediaStream | null>;
   clientId: string;
   connectionStates: Record<string, ConnectionState>;
   setConnectionStates: React.Dispatch<React.SetStateAction<Record<string, ConnectionState>>>;
@@ -26,6 +27,7 @@ export function useWebRTC({
   socket,
   sessionId,
   mediaManager,
+  localStreamRef,
   clientId,
   connectionStates,
   setConnectionStates,
@@ -79,8 +81,8 @@ export function useWebRTC({
       isInitiatorRef.current.add(peerId);
     }
 
-    // Add local tracks
-    const localStream = mediaManager.getStream();
+    // Add local tracks - USE localStreamRef (the actual camera stream) instead of mediaManager
+    const localStream = localStreamRef.current;
     if (localStream) {
       localStream.getTracks().forEach((track) => {
         const sender = pc.addTrack(track, localStream);
@@ -118,7 +120,7 @@ export function useWebRTC({
         if (attempts < 3) {
           reconnectionAttempts.current = { ...reconnectionAttempts.current, [peerId]: attempts + 1 };
           setTimeout(() => {
-            const stream = mediaManager.getStream();
+            const stream = localStreamRef.current;
             if (stream && stream.getTracks().length > 0) {
               setConnectionStates((prev) => ({ ...prev, [peerId]: 'connecting' }));
             }
@@ -275,7 +277,7 @@ export function useWebRTC({
     }];
     
     return pc;
-  }, [mediaManager, socket, sessionId, iceServers]);
+  }, [localStreamRef, socket, sessionId, iceServers]);
 
   // Create offer to a specific peer - ALWAYS create new offer for re-negotiation
   // This enables adding tracks after initial connection is established
@@ -294,7 +296,7 @@ export function useWebRTC({
         isInitiatorRef.current.add(targetClientId);
         
         // Add or replace local tracks using replaceTrack for existing senders
-        const localStream = mediaManager.getStream();
+        const localStream = localStreamRef.current;
         if (localStream) {
           localStream.getTracks().forEach((track) => {
             const senders = pc!.getSenders();
