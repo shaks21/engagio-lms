@@ -67,6 +67,14 @@ export class EngagementProcessor implements OnModuleInit, OnModuleDestroy {
           `[${topic}/${message.offset}] ${event.type} tenant=${event.tenantId} session=${event.sessionId}`,
         );
 
+        // GUARD: Skip events with null tenantId to prevent Prisma validation errors
+        if (!event.tenantId || !event.sessionId) {
+          this.logger.warn(
+            `[${topic}/${message.offset}] Skipping event with missing tenantId or sessionId: ${JSON.stringify(event)}`,
+          );
+          return;
+        }
+
         await this.prisma.engagementEvent.create({
           data: {
             tenantId: event.tenantId,

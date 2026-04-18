@@ -220,9 +220,19 @@ export default function ClassroomPage() {
 
   // Initialize socket connection
   useEffect(() => {
-    // Prevent duplicate initialization
-    if (initializedRef.current) return;
-    initializedRef.current = true;
+    // Prevent duplicate initialization - but allow re-init if auth was not ready
+    // Check if we already have a socket AND have valid auth
+    if (socket && userId && tenantId) {
+      // Already initialized with valid auth
+      return;
+    }
+    
+    // If we have a socket but no auth, disconnect and re-init
+    if (socket && (!userId || !tenantId)) {
+      console.log('Auth cleared, re-initializing...');
+      socket.disconnect();
+      setSocket(null);
+    }
 
     // Set loading to false after short timeout (500ms) - ALWAYS, even if auth not ready
     // This prevents getting stuck on "Joining classroom" screen
@@ -237,11 +247,12 @@ export default function ClassroomPage() {
       return () => clearTimeout(timer);
     }
 
-    // If auth is not ready yet, wait for it - but still stop loading spinner
-    // DON'T clear the timer - let it run to set loading=false
+    // If auth is not ready yet, we can't proceed - but still stop loading spinner
     if (!userId || !tenantId) {
-      console.log('Auth not ready yet, showing classroom anyway');
-      return; // Don't clear timer - it will set loading=false after 500ms
+      console.log('Auth not ready yet, waiting...');
+      // Return without connecting socket - useEffect will re-run when auth becomes ready
+      // Timer will still fire after 500ms to stop the loading spinner
+      return () => clearTimeout(timer);
     }
 
     // Now we have auth ready, proceed with socket connection
@@ -255,6 +266,24 @@ export default function ClassroomPage() {
 
     newSocket.on('connect', () => {
       console.log('Socket connected, joining classroom...');
+      
+      // OPTIMISTIC UI: Add self to participants immediately
+      // This prevents "0 participants" showing while waiting for server response
+      const tempClientId = `temp-${userId}-${Date.now()}`.slice(0, 36);
+      setParticipants(prev => {
+        // Only add if not already present
+        if (prev.some(p => p.userId === userId)) return prev;
+        return [...prev, {
+          userId,
+          clientId: tempClientId,
+          name: userName || user?.email || 'Unknown User',
+          status: 'online',
+          joinedAt: new Date(),
+          media: { micActive: false, cameraActive: false, screenShareActive: false },
+          isHost: true,
+        }];
+      });
+      
       newSocket.emit('joinClassroom', { 
         tenantId, 
         sessionId, 
@@ -298,7 +327,23 @@ export default function ClassroomPage() {
         isHost: p.userId === userId, // Mark self as host
       }));
       
-      setParticipants(hydrated);
+      // Merge: Replace temp entry with real one if exists, otherwise add all
+      setParticipants(prev => {
+        // Remove temp self entry
+        const withoutTemp = prev.filter(p => !p.clientId.startsWith('temp-'));
+        // Check if we already have self in hydrated (from server response)
+        const hasSelf = hydrated.some(p => p.userId === userId);
+        if (hasSelf) {
+          return hydrated;
+        } else {
+          // Server didn't include self, use hydrated + updated self
+          const updatedSelf = hydrated.find(p => p.userId === userId);
+          if (updatedSelf) {
+            return hydrated;
+          }
+          return [...hydrated];
+        }
+      });
     });
 
     newSocket.on('user-joined', (data: { userId: string; clientId: string; userName?: string }) => {

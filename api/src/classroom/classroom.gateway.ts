@@ -153,6 +153,16 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
   ) {
     const { tenantId, sessionId, courseId, userId, userName, classroomCode } = data;
 
+    // VALIDATION: Reject join if missing critical fields
+    if (!tenantId || !userId || !sessionId) {
+      this.logger.warn(`Rejecting join - missing required fields: tenantId=${tenantId}, userId=${userId}, sessionId=${sessionId}`);
+      client.emit("join-error", { 
+        status: "error", 
+        message: "Missing required fields: tenantId, userId, and sessionId are required" 
+      });
+      return { status: "error", message: "Missing required fields" };
+    }
+
     // Store connection data
     client.data.tenantId = tenantId;
     client.data.sessionId = sessionId;
@@ -244,7 +254,14 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     // HYDRATION: Build current participants list for the joining user
     // Also check Socket.io rooms for participants that might have connected before server restart
-    const socketRoomMembers = this.server.sockets.adapter.rooms.get(`session::${sessionId}`);
+    // Note: With Redis adapter, rooms may not be directly accessible
+    let socketRoomMembers: Set<string> | undefined;
+    try {
+      socketRoomMembers = this.server.sockets?.adapter?.rooms?.get(`session::${sessionId}`);
+    } catch (e) {
+      // Redis adapter may not expose rooms directly
+      this.logger.warn(`Cannot access socket rooms: ${e}`);
+    }
     const knownParticipants = Array.from(room.participants.values());
     const socketMemberIds = socketRoomMembers ? Array.from(socketRoomMembers).filter(id => id !== client.id) : [];
     
