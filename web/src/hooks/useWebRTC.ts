@@ -175,20 +175,32 @@ export function useWebRTC({
     };
 
     // Handle incoming tracks - CRITICAL: Proper stream mapping
+    // This is assigned when RTCPeerConnection is created (not just during offer/answer)
     pc.ontrack = (event) => {
-      const [remoteStream] = event.streams;
-      
-      // Log to verify browser actually sees the incoming video stream
-      console.log(`🔥 Track received from ${peerId}:`, {
-        trackKind: event.track?.kind,
+      // Log to verify browser actually sees the incoming track
+      console.log(`🔥 RECEIVED REMOTE TRACK: ${event.track?.kind} FROM: ${peerId}`, {
         trackId: event.track?.id,
         streams: event.streams.map(s => s.id),
       });
       
-      // Create a stable stream ID based on peer
-      if (remoteStream) {
-        (remoteStream as any).peerId = peerId;
+      // Handle stream reconstruction
+      let remoteStream: MediaStream;
+      
+      // Check if we already have a stream for this peer
+      const existingPeer = peersRef.current.find(p => p.peerId === peerId);
+      if (existingPeer?.remoteStream) {
+        // Stream exists - add the new track to it
+        console.log(`➕ Adding track to existing stream for ${peerId}`);
+        remoteStream = existingPeer.remoteStream;
+        remoteStream.addTrack(event.track!);
+      } else {
+        // Create new stream with the track
+        console.log(`🆕 Creating new stream for ${peerId} with track`);
+        remoteStream = new MediaStream([event.track!]);
       }
+      
+      // Mark the stream with peerId for identification
+      (remoteStream as any).peerId = peerId;
 
       // Use functional update to ensure we have the latest state
       setPeers((prev) => {

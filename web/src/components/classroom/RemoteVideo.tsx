@@ -14,25 +14,40 @@ export default function RemoteVideo({ stream, participantName, peerId }: RemoteV
   // Use useEffect to bind srcObject - prevents React render misses
   useEffect(() => {
     const video = videoRef.current;
-    if (video && stream) {
-      video.srcObject = stream;
-      
-      // Force play with onloadedmetadata to handle autoplay policy
-      video.onloadedmetadata = () => {
-        video.play().catch((err) => {
-          console.error(`Autoplay blocked for ${participantName}:`, err);
-        });
-      };
-      
-      // Also try play immediately in case metadata already loaded
-      video.play().catch((err) => {
-        console.warn(`Failed to play video for ${participantName}:`, err);
-      });
-    }
+    if (!video || !stream) return;
     
-    // Cleanup when stream becomes null
+    console.log("📺 RemoteVideo stream updated:", stream.id, "Tracks:", stream.getTracks().length);
+    
+    // Bind stream to video element
+    video.srcObject = stream;
+    
+    // Force play with onloadedmetadata to handle autoplay policy
+    video.onloadedmetadata = () => {
+      video.play().catch((err) => {
+        console.error(`Autoplay blocked for ${participantName}:`, err);
+      });
+    };
+    
+    // Also try play immediately in case metadata already loaded
+    video.play().catch((err) => {
+      console.warn(`Failed to play video for ${participantName}:`, err);
+    });
+    
+    // Handle the case where tracks are added LATER to an existing stream
+    const handleTrackAdded = () => {
+      console.log("➕ New track added to stream, refreshing video:", stream.id);
+      // Reset and rebind to trigger video element update
+      video.srcObject = null;
+      video.srcObject = stream;
+      video.play().catch(console.warn);
+    };
+    
+    stream.addEventListener('addtrack', handleTrackAdded);
+    
+    // Cleanup when stream changes or component unmounts
     return () => {
-      if (video && !stream) {
+      stream.removeEventListener('addtrack', handleTrackAdded);
+      if (!stream) {
         video.srcObject = null;
       }
     };
