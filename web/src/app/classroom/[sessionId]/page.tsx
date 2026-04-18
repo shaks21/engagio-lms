@@ -81,6 +81,13 @@ export default function ClassroomPage() {
         audio: enableMic
       };
 
+      // Check if browser supports media devices
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('Browser does not support media devices');
+        setMediaError('Media not supported in this environment');
+        return null;
+      }
+
       // Try to get user media - will fail gracefully on HTTP/non-secure contexts
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
@@ -231,10 +238,13 @@ export default function ClassroomPage() {
     }
 
     // If auth is not ready yet, wait for it - but still stop loading spinner
+    // DON'T clear the timer - let it run to set loading=false
     if (!userId || !tenantId) {
       console.log('Auth not ready yet, showing classroom anyway');
-      return () => clearTimeout(timer);
+      return; // Don't clear timer - it will set loading=false after 500ms
     }
+
+    // Now we have auth ready, proceed with socket connection
 
     const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws')
       ? `${process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws')}/classroom`

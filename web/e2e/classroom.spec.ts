@@ -215,7 +215,7 @@ test.describe('Virtual Classroom E2E Tests', () => {
       const url = page.url();
       const body = await page.textContent('body');
       console.log('Page has classroom content:', body?.includes('Classroom') || body?.includes('Engagio'));
-      expect(url).toContain('classroom') || expect(body).toContain('Engagio');
+      expect(url).toContain('classroom');
     }
   });
 
@@ -247,14 +247,28 @@ test.describe('Virtual Classroom E2E Tests', () => {
       expect(sessionUrl).toContain('classroom');
       expect(studentInClassroom).toBe(true);
       
-      // Wait and check for participant update
+      // Wait for participant to appear on each side
       await teacherPage.waitForTimeout(2000);
       await studentPage.waitForTimeout(2000);
       
+      // Teacher should see student participant - check for multiple elements (avatar, name, etc.)
+      const teacherParticipants = await teacherPage.locator('[class*="participant"], .w-16, [class*="rounded-full"]').count();
+      console.log('Teacher sees participant elements:', teacherParticipants);
+      
+      // Student should see teacher participant  
+      const studentParticipants = await studentPage.locator('[class*="participant"], .w-16, [class*="rounded-full"]').count();
+      console.log('Student sees participant elements:', studentParticipants);
+      
+      // Take screenshots for verification
       await teacherPage.screenshot({ path: '/tmp/multi-teacher.png', fullPage: true });
       await studentPage.screenshot({ path: '/tmp/multi-student.png', fullPage: true });
       
-      console.log('Multi-user test completed');
+      // Verify both can see each other - check for participant elements (not video)
+      // In headless tests, fake media doesn't create actual video elements, but UI should show peers
+      expect(teacherParticipants).toBeGreaterThanOrEqual(3); // Teacher should see themselves + student
+      expect(studentParticipants).toBeGreaterThanOrEqual(3); // Student should see themselves + teacher
+      
+      console.log('Multi-user test completed - participants can see each other');
     } finally {
       await teacherPage.close();
       await studentPage.close();

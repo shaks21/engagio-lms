@@ -75,6 +75,15 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     return room;
   }
 
+  // Helper: Find socket ID by stable clientId
+  private getSocketIdByClientId(clientId: string, sessionId: string): string | undefined {
+    const room = this.sessions.get(sessionId);
+    if (!room) return undefined;
+    
+    const participant = room.participants.get(clientId);
+    return participant?.socketId;
+  }
+
   // Helper: Remove participant from session
   private removeParticipantFromSession(sessionId: string, clientId: string): Participant | undefined {
     const room = this.sessions.get(sessionId);
@@ -346,11 +355,17 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     const { targetClientId, offer, sessionId } = data;
     this.logger.log(`Forwarding WebRTC offer from ${client.id} to ${targetClientId}`);
 
-    this.server.to(targetClientId).emit("webrtc-offer", {
-      offer,
-      senderClientId: client.id,
-      sessionId,
-    });
+    // Find the target socket by clientId
+    const targetSocketId = this.getSocketIdByClientId(targetClientId, sessionId);
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit("webrtc-offer", {
+        offer,
+        senderClientId: client.id,
+        sessionId,
+      });
+    } else {
+      this.logger.warn(`Target client ${targetClientId} not found in session ${sessionId}`);
+    }
 
     return { status: "ok" };
   }
@@ -363,11 +378,17 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     const { targetClientId, answer, sessionId } = data;
     this.logger.log(`Forwarding WebRTC answer from ${client.id} to ${targetClientId}`);
 
-    this.server.to(targetClientId).emit("webrtc-answer", {
-      answer,
-      senderClientId: client.id,
-      sessionId,
-    });
+    // Find the target socket by clientId
+    const targetSocketId = this.getSocketIdByClientId(targetClientId, sessionId);
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit("webrtc-answer", {
+        answer,
+        senderClientId: client.id,
+        sessionId,
+      });
+    } else {
+      this.logger.warn(`Target client ${targetClientId} not found in session ${sessionId}`);
+    }
 
     return { status: "ok" };
   }
@@ -380,11 +401,17 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     const { targetClientId, candidate, sessionId } = data;
     this.logger.log(`Forwarding ICE candidate from ${client.id} to ${targetClientId}`);
 
-    this.server.to(targetClientId).emit("webrtc-ice-candidate", {
-      candidate,
-      senderClientId: client.id,
-      sessionId,
-    });
+    // Find the target socket by clientId
+    const targetSocketId = this.getSocketIdByClientId(targetClientId, sessionId);
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit("webrtc-ice-candidate", {
+        candidate,
+        senderClientId: client.id,
+        sessionId,
+      });
+    } else {
+      this.logger.warn(`Target client ${targetClientId} not found in session ${sessionId}`);
+    }
 
     return { status: "ok" };
   }
