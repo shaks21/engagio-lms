@@ -672,6 +672,7 @@ export default function ClassroomPage() {
                   peerId={peer.peerId}
                   stream={peer.remoteStream}
                   participantName={participants.find(p => p.clientId === peer.peerId)?.name || 'Participant'}
+                  connectionState={connectionStates[peer.peerId]}
                 />
               ))}
               

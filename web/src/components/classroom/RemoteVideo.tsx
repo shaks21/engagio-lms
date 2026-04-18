@@ -1,15 +1,33 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 
 interface RemoteVideoProps {
   stream: MediaStream | null;
   participantName: string;
   peerId: string;
+  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'failed';
 }
 
-export default function RemoteVideo({ stream, participantName, peerId }: RemoteVideoProps) {
+export default function RemoteVideo({ stream, participantName, peerId, connectionState }: RemoteVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [debugInfo, setDebugInfo] = useState({ videoTracks: 0, audioTracks: 0, state: 'no-stream' });
+
+  // Update debug info when stream changes
+  useEffect(() => {
+    if (stream) {
+      const videoTracks = stream.getVideoTracks().length;
+      const audioTracks = stream.getAudioTracks().length;
+      setDebugInfo({
+        videoTracks,
+        audioTracks,
+        state: 'stream-received',
+      });
+      console.log(`📊 Debug info for ${participantName}: video=${videoTracks}, audio=${audioTracks}`);
+    } else {
+      setDebugInfo({ videoTracks: 0, audioTracks: 0, state: 'no-stream' });
+    }
+  }, [stream, participantName]);
 
   // Use useEffect to bind srcObject - prevents React render misses
   useEffect(() => {
@@ -25,6 +43,14 @@ export default function RemoteVideo({ stream, participantName, peerId }: RemoteV
     video.onloadedmetadata = () => {
       video.play().catch((err) => {
         console.error(`Autoplay blocked for ${participantName}:`, err);
+      });
+    };
+    
+    // onCanPlay handler - explicitly call play() when video is ready
+    video.oncanplay = () => {
+      console.log(`▶️ onCanPlay fired for ${participantName}`);
+      video.play().catch((err) => {
+        console.warn(`Play on canplay failed for ${participantName}:`, err);
       });
     };
     
@@ -80,6 +106,10 @@ export default function RemoteVideo({ stream, participantName, peerId }: RemoteV
           <p className="text-sm font-medium text-gray-300">{participantName}</p>
           <p className="text-xs text-gray-500">Connecting...</p>
         </div>
+        {/* Debug overlay */}
+        <div className="absolute top-2 right-2 bg-red-600/80 px-2 py-1 rounded text-xs text-white">
+          {debugInfo.state}
+        </div>
       </div>
     );
   }
@@ -93,8 +123,15 @@ export default function RemoteVideo({ stream, participantName, peerId }: RemoteV
         muted
         className="w-full h-full object-cover"
       />
+      {/* Participant name */}
       <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
         {participantName}
+      </div>
+      {/* LIVE STREAM MONITOR DEBUG OVERLAY */}
+      <div className="absolute top-2 right-2 bg-green-600/80 px-2 py-1 rounded text-xs text-white flex flex-col gap-0.5">
+        <div>ICE: {connectionState || 'unknown'}</div>
+        <div>Video: {debugInfo.videoTracks}</div>
+        <div>Audio: {debugInfo.audioTracks}</div>
       </div>
     </div>
   );

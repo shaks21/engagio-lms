@@ -35,6 +35,10 @@ export function useWebRTC({
   const reconnectionAttempts = useRef<Record<string, number>>({});
   const isInitiatorRef = useRef<Set<string>>(new Set());
   
+  // BULLETPROOF: Global Map to store MediaStreams by peerId
+  // This ensures the UI reference never breaks - tracks are always added to this map
+  const streamsRef = useRef<Map<string, MediaStream>>(new Map());
+  
   // Polite peer: The peer with lexicographically SMALLER clientId is "polite"
   // They will yield when there's an offer collision
   const isPoliteRef = useRef<Record<string, boolean>>({});
@@ -177,26 +181,24 @@ export function useWebRTC({
     // Handle incoming tracks - CRITICAL: Proper stream mapping
     // This is assigned when RTCPeerConnection is created (not just during offer/answer)
     pc.ontrack = (event) => {
-      // Log to verify browser actually sees the incoming track
-      console.log(`🔥 RECEIVED REMOTE TRACK: ${event.track?.kind} FROM: ${peerId}`, {
+      // HIGH VISIBILITY LOG: This is THE proof that track data is arriving
+      console.log(`📡 TRACK RECEIVED: ${event.track?.kind} from ${peerId}`, {
         trackId: event.track?.id,
-        streams: event.streams.map(s => s.id),
+        existingStreams: Array.from(streamsRef.current.keys()),
       });
       
-      // Handle stream reconstruction
-      let remoteStream: MediaStream;
+      // BULLETPROOF: Use the global streams Map
+      let remoteStream = streamsRef.current.get(peerId);
       
-      // Check if we already have a stream for this peer
-      const existingPeer = peersRef.current.find(p => p.peerId === peerId);
-      if (existingPeer?.remoteStream) {
-        // Stream exists - add the new track to it
-        console.log(`➕ Adding track to existing stream for ${peerId}`);
-        remoteStream = existingPeer.remoteStream;
+      if (remoteStream) {
+        // Stream exists in our Map - add the new track to it
+        console.log(`➕ Adding track to existing stream Map for ${peerId}`);
         remoteStream.addTrack(event.track!);
       } else {
-        // Create new stream with the track
-        console.log(`🆕 Creating new stream for ${peerId} with track`);
+        // Create new stream and store in our Map
+        console.log(`🆕 Creating new stream in Map for ${peerId}`);
         remoteStream = new MediaStream([event.track!]);
+        streamsRef.current.set(peerId, remoteStream);
       }
       
       // Mark the stream with peerId for identification
@@ -247,7 +249,13 @@ export function useWebRTC({
           offerToReceiveVideo: true,
         });
         await pc.setLocalDescription(offer);
-
+        
+        // SDP Logging: Show what media is being sent
+        const sdp = pc.localDescription?.sdp || '';
+        const hasVideo = sdp.includes('m=video');
+        const hasAudio = sdp.includes('m=audio');
+        console.log(`📤 Sending SDP with media: video=${hasVideo}, audio=${hasAudio} to ${peerId}`);
+        
         socket?.emit('webrtc-offer', {
           targetClientId: peerId,
           offer: pc.localDescription,
@@ -285,14 +293,21 @@ export function useWebRTC({
         // Mark as initiator so we can create new offers
         isInitiatorRef.current.add(targetClientId);
         
-        // Add any new local tracks that might not be sent yet
+        // Add or replace local tracks using replaceTrack for existing senders
         const localStream = mediaManager.getStream();
         if (localStream) {
           localStream.getTracks().forEach((track) => {
-            // Check if track is already sent
             const senders = pc!.getSenders();
-            const hasTrack = senders.some(s => s.track?.id === track.id);
-            if (!hasTrack) {
+            const existingSender = senders.find(s => s.track?.kind === track.kind);
+            
+            if (existingSender) {
+              // Use replaceTrack to update an existing sender (better than creating new connection)
+              console.log(`🔄 Replacing track for ${track.kind} on existing sender`);
+              existingSender.replaceTrack(track).catch(err => {
+                console.error(`Failed to replace track: ${err}`);
+              });
+            } else {
+              // No existing sender, add the track
               console.log(`➕ Adding new track to existing peer: ${track.kind}`);
               pc!.addTrack(track, localStream);
             }
@@ -308,6 +323,12 @@ export function useWebRTC({
             offerToReceiveVideo: true,
           });
           await pc.setLocalDescription(offer);
+          
+          // SDP Logging: Show what media is being sent
+          const sdp = pc.localDescription?.sdp || '';
+          const hasVideo = sdp.includes('m=video');
+          const hasAudio = sdp.includes('m=audio');
+          console.log(`📤 Sending re-negotiation SDP: video=${hasVideo}, audio=${hasAudio} to ${targetClientId}`);
           
           socket?.emit('webrtc-offer', {
             targetClientId,
@@ -342,6 +363,12 @@ export function useWebRTC({
           offerToReceiveVideo: true,
         });
         await pc.setLocalDescription(offer);
+        
+        // SDP Logging: Show what media is being sent
+        const sdp = pc.localDescription?.sdp || '';
+        const hasVideo = sdp.includes('m=video');
+        const hasAudio = sdp.includes('m=audio');
+        console.log(`📤 Sending initial SDP: video=${hasVideo}, audio=${hasAudio} to ${targetClientId}`);
         
         socket?.emit('webrtc-offer', {
           targetClientId,
