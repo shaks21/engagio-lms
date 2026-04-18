@@ -178,10 +178,11 @@ export function useWebRTC({
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
       
-      console.log(`📹 ontrack fired for ${peerId}:`, {
-        streams: event.streams.map(s => s.id),
+      // Log to verify browser actually sees the incoming video stream
+      console.log(`🔥 Track received from ${peerId}:`, {
         trackKind: event.track?.kind,
         trackId: event.track?.id,
+        streams: event.streams.map(s => s.id),
       });
       
       // Create a stable stream ID based on peer

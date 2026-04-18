@@ -17,7 +17,14 @@ export default function RemoteVideo({ stream, participantName, peerId }: RemoteV
     if (video && stream) {
       video.srcObject = stream;
       
-      // Ensure video plays when stream is available
+      // Force play with onloadedmetadata to handle autoplay policy
+      video.onloadedmetadata = () => {
+        video.play().catch((err) => {
+          console.error(`Autoplay blocked for ${participantName}:`, err);
+        });
+      };
+      
+      // Also try play immediately in case metadata already loaded
       video.play().catch((err) => {
         console.warn(`Failed to play video for ${participantName}:`, err);
       });
