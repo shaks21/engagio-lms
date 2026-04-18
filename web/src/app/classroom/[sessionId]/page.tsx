@@ -36,8 +36,14 @@ export default function ClassroomPage() {
   const router = useRouter();
   const { user, tenantId, userId, userName } = useAuth();
 
-  const [socket, setSocket] = useState<Socket | null>(null);
+  // Stable socket reference - useRef to prevent re-render disconnections
+  // This ensures the socket doesn't disconnect during React re-renders
+  const socketRef = useRef<Socket | null>(null);
+  const [socketState, setSocketState] = useState<Socket | null>(null); // For UI rendering
   const [myClientId, setMyClientId] = useState<string>(''); // Stable clientId from server
+
+  // Stable socket getter - always returns current socket without triggering re-renders
+  const socket = socketRef.current;
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [connectionStates, setConnectionStates] = useState<Record<string, ConnectionState>>({});
   const mediaManagerRef = useRef<any>(null);
@@ -253,6 +259,7 @@ export default function ClassroomPage() {
       : 'ws://164.68.119.230:3000/classroom';
 
     // Create new socket with explicit cleanup and reconnection
+    // Use socketRef to store the socket instance (stable across re-renders)
     const newSocket = io(SOCKET_URL, { 
       transports: ['websocket'],
       reconnection: true,
@@ -260,7 +267,10 @@ export default function ClassroomPage() {
       reconnectionDelay: 1000,
     });
     
-    setSocket(newSocket);
+    // Store in ref (won't trigger re-render)
+    socketRef.current = newSocket;
+    // Also set state for initial render
+    setSocketState(newSocket);
     initializedRef.current = true;
 
     newSocket.on('connect', () => {

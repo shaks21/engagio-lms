@@ -42,11 +42,21 @@ export function useWebRTC({
   // Track pending local offers to detect collisions
   const pendingLocalOfferRef = useRef<Set<string>>(new Set());
 
-  // ICE servers with TURN fallback
+  // ICE servers with TURN fallback for NAT traversal
   const iceServers: RTCIceServer[] = useMemo(() => [
+    // Google STUN servers
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    // OpenRelay TURN server (free, no auth required for basic usage)
+    { 
+      urls: 'turn:openrelay.metered.ca:80',
+      credential: 'openrelayproject',
+    },
+    { 
+      urls: 'turn:openrelay.metered.ca:443',
+      credential: 'openrelayproject',
+    },
   ], []);
 
   const createPeerConnection = useCallback((peerId: string, initiator: boolean = true): RTCPeerConnection => {
@@ -86,24 +96,40 @@ export function useWebRTC({
         connectionState: pc.connectionState,
       });
       
-      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
-        console.warn(`⚠️ ICE ${state} for peer ${peerId} - possible firewall/TURN issue`);
-        // Clean up peer connection
-        pc.close();
-        peersRef.current = peersRef.current.filter((p) => p.peerId !== peerId);
-        setPeers((prev) => prev.filter((p) => p.peerId !== peerId));
-        isInitiatorRef.current.delete(peerId);
+      if (pc.iceConnectionState === 'failed') {
+        console.warn(`⚠️ ICE FAILED for peer ${peerId} - attempting ICE restart...`);
         
-        // Schedule reconnection attempt
+        // STEP 1: Attempt ICE restart before giving up
+        try {
+          pc.restartIce();
+          console.log(`🔄 ICE restart triggered for ${peerId}`);
+        } catch (err) {
+          console.error(`❌ ICE restart failed for ${peerId}:`, err);
+        }
+        
+        // Schedule reconnection attempt if ICE restart doesn't work
         const attempts = reconnectionAttempts.current[peerId] || 0;
         if (attempts < 3) {
           reconnectionAttempts.current = { ...reconnectionAttempts.current, [peerId]: attempts + 1 };
           setTimeout(() => {
-            // Only retry if we have local media
             const stream = mediaManager.getStream();
             if (stream && stream.getTracks().length > 0) {
               setConnectionStates((prev) => ({ ...prev, [peerId]: 'connecting' }));
-              // Will need to request new offer from peer - handled by parent
+            }
+          }, 1000 * Math.min(2 ** attempts, 10));
+        }
+      } else if (pc.iceConnectionState === 'disconnected') {
+        console.warn(`⚠️ ICE DISCONNECTED for peer ${peerId} - will retry...`);
+        // Don't close immediately on disconnect - wait for potential reconnection
+        const attempts = reconnectionAttempts.current[peerId] || 0;
+        if (attempts < 3) {
+          reconnectionAttempts.current = { ...reconnectionAttempts.current, [peerId]: attempts + 1 };
+          setTimeout(() => {
+            if (pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') {
+              const stream = mediaManager.getStream();
+              if (stream && stream.getTracks().length > 0) {
+                setConnectionStates((prev) => ({ ...prev, [peerId]: 'connecting' }));
+              }
             }
           }, 1000 * Math.min(2 ** attempts, 10));
         }
@@ -112,12 +138,37 @@ export function useWebRTC({
 
     // Handle ICE candidates
     pc.onicecandidate = (event) => {
-      if (event.candidate && socket) {
-        socket.emit('webrtc-ice-candidate', {
-          targetClientId: peerId,
-          candidate: event.candidate,
-          sessionId,
+      if (event.candidate) {
+        // Log the type of ICE candidate being generated
+        const candidate = event.candidate;
+        const candidateType = candidate.type; // 'host', 'srflx', or 'relay'
+        const candidateIP = candidate.address;
+        const candidatePort = candidate.port;
+        const candidateProtocol = candidate.protocol; // 'udp' or 'tcp'
+        const candidateFoundation = candidate.foundation;
+        
+        console.log(`🧊 ICE Candidate for ${peerId}:`, {
+          type: candidateType,
+          ip: candidateIP,
+          port: candidatePort,
+          protocol: candidateProtocol,
+          foundation: candidateFoundation,
+          ttl: candidate.candidate,
         });
+        
+        // Emit the candidate over socket
+        if (socket) {
+          socket.emit('webrtc-ice-candidate', {
+            targetClientId: peerId,
+            candidate: event.candidate,
+            sessionId,
+          });
+        }
+        
+        // Alert if we're only seeing host candidates (won't work across internet)
+        if (candidateType === 'host') {
+          console.warn(`⚠️ Only HOST candidate found for ${peerId}. Need srflx (STUN) or relay (TURN) for internet connectivity.`);
+        }
       }
     };
 
