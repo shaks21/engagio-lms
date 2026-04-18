@@ -34,6 +34,13 @@ export function useWebRTC({
   const peersRef = useRef<PeerConnectionState[]>([]);
   const reconnectionAttempts = useRef<Record<string, number>>({});
   const isInitiatorRef = useRef<Set<string>>(new Set());
+  
+  // Polite peer: The peer with lexicographically SMALLER clientId is "polite"
+  // They will yield when there's an offer collision
+  const isPoliteRef = useRef<Record<string, boolean>>({});
+  
+  // Track pending local offers to detect collisions
+  const pendingLocalOfferRef = useRef<Set<string>>(new Set());
 
   // ICE servers with TURN fallback
   const iceServers: RTCIceServer[] = useMemo(() => [
@@ -44,6 +51,12 @@ export function useWebRTC({
 
   const createPeerConnection = useCallback((peerId: string, initiator: boolean = true): RTCPeerConnection => {
     const pc = new RTCPeerConnection({ iceServers });
+
+    // Determine polite peer status - smaller clientId is polite
+    const myId = clientId || '';
+    const isPolite = myId < peerId;  // Smaller ID = polite
+    isPoliteRef.current[peerId] = isPolite;
+    console.log(`Peer ${peerId}: ${isPolite ? 'POLITE (will yield)' : 'IMPOLITE (will insist)'}, myId=${myId}`);
 
     // Track whether WE initiated the connection (to avoid duplicate offers)
     if (initiator) {
@@ -66,9 +79,15 @@ export function useWebRTC({
       
       setConnectionStates((prev) => ({ ...prev, [peerId]: state }));
       
-      console.log(`ICE connection state for ${peerId}: ${state}`);
+      // Detailed ICE state logging
+      console.log(`🔗 ICE Connection State for ${peerId}: ${state}`, {
+        iceGatheringState: pc.iceGatheringState,
+        signalingState: pc.signalingState,
+        connectionState: pc.connectionState,
+      });
       
       if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+        console.warn(`⚠️ ICE ${state} for peer ${peerId} - possible firewall/TURN issue`);
         // Clean up peer connection
         pc.close();
         peersRef.current = peersRef.current.filter((p) => p.peerId !== peerId);
@@ -106,28 +125,39 @@ export function useWebRTC({
     pc.ontrack = (event) => {
       const [remoteStream] = event.streams;
       
+      console.log(`📹 ontrack fired for ${peerId}:`, {
+        streams: event.streams.map(s => s.id),
+        trackKind: event.track?.kind,
+        trackId: event.track?.id,
+      });
+      
       // Create a stable stream ID based on peer
       if (remoteStream) {
         (remoteStream as any).peerId = peerId;
       }
 
+      // Use functional update to ensure we have the latest state
       setPeers((prev) => {
         const existingIndex = prev.findIndex((p) => p.peerId === peerId);
+        const newStream = remoteStream || new MediaStream();
+        
         if (existingIndex >= 0) {
           // Update existing peer with new stream
+          console.log(`🔄 Updating existing peer ${peerId} with remote stream`);
           const updated = [...prev];
           updated[existingIndex] = {
             ...updated[existingIndex],
-            remoteStream: remoteStream || new MediaStream(),
+            remoteStream: newStream,
             connectionState: 'connected',
           };
           return updated;
         }
         // Add new peer
+        console.log(`➕ Adding new peer ${peerId} with remote stream`);
         return [...prev, { 
           peerId, 
           connection: pc, 
-          remoteStream: remoteStream || new MediaStream(), 
+          remoteStream: newStream, 
           connectionState: 'connected' 
         }];
       });
@@ -182,7 +212,10 @@ export function useWebRTC({
         return;
       }
       
-      console.log(`Creating WebRTC offer to ${targetClientId}`);
+      // Mark that we have a pending local offer
+      pendingLocalOfferRef.current.add(targetClientId);
+      
+      console.log(`📤 Creating WebRTC offer to ${targetClientId} (pending: ${pendingLocalOfferRef.current.has(targetClientId)})`);
       const pc = createPeerConnection(targetClientId, true);
       
       setPeers((prev) => [...prev.filter((p) => p.peerId !== targetClientId), {
@@ -213,10 +246,29 @@ export function useWebRTC({
   // Handle incoming offer
   const handleOffer = useCallback(
     async (offer: RTCSessionDescriptionInit, senderClientId: string) => {
-      console.log(`Handling offer from ${senderClientId}`);
+      console.log(`📥 Handling offer from ${senderClientId}`);
+      
+      // Get the peer connection if it exists
+      let pc: RTCPeerConnection;
+      let existingPeer = peersRef.current.find(p => p.peerId === senderClientId);
+      
+      // Check signaling state for offer collision handling
+      if (existingPeer?.connection && existingPeer.connection.signalingState !== 'stable') {
+        console.log(`⚠️ Offer collision detected! signalingState: ${existingPeer.connection.signalingState}`);
+        
+        // If we're the polite peer, we yield - close our pending connection and accept remote
+        if (isPoliteRef.current[senderClientId]) {
+          console.log(`🤝 POLITE PEER YIELDING: Closing local offer, accepting remote offer from ${senderClientId}`);
+          existingPeer.connection.close();
+          existingPeer = undefined;
+        } else {
+          // Impolite peer - we keep our offer, ignore the remote one
+          console.log(`✊ IMPOLITE PEER INSISTING: Keeping local offer, ignoring remote from ${senderClientId}`);
+          return;
+        }
+      }
       
       // Check if we already have a connection
-      const existingPeer = peersRef.current.find(p => p.peerId === senderClientId);
       if (existingPeer) {
         // Close existing and recreate
         existingPeer.connection.close();
@@ -224,8 +276,11 @@ export function useWebRTC({
         setPeers(prev => prev.filter(p => p.peerId !== senderClientId));
       }
       
+      // Clear pending offer flag
+      pendingLocalOfferRef.current.delete(senderClientId);
+      
       // Create peer connection as answerer (not initiator)
-      const pc = createPeerConnection(senderClientId, false);
+      pc = createPeerConnection(senderClientId, false);
       
       setPeers((prev) => [...prev.filter((p) => p.peerId !== senderClientId), {
         peerId: senderClientId,
@@ -236,6 +291,27 @@ export function useWebRTC({
       setConnectionStates((prev) => ({ ...prev, [senderClientId]: 'connecting' }));
 
       try {
+        // Check signalingState before setting remote description
+        if (pc.signalingState !== 'stable') {
+          console.warn(`⚠️ Cannot set remote description - signalingState is ${pc.signalingState}, waiting...`);
+          // Wait for the state to become stable
+          await new Promise<void>((resolve) => {
+            const checkState = () => {
+              if (pc.signalingState === 'stable') {
+                pc.removeEventListener('signalingstatechange', checkState);
+                resolve();
+              }
+            };
+            pc.addEventListener('signalingstatechange', checkState);
+            // Timeout after 5 seconds
+            setTimeout(() => {
+              pc.removeEventListener('signalingstatechange', checkState);
+              resolve();
+            }, 5000);
+          });
+        }
+        
+        console.log(`📝 Setting remote description for ${senderClientId}, signalingState: ${pc.signalingState}`);
         await pc.setRemoteDescription(new RTCSessionDescription(offer));
         const answer = await pc.createAnswer({
           offerToReceiveAudio: true,
@@ -261,9 +337,17 @@ export function useWebRTC({
     (answer: RTCSessionDescriptionInit, senderClientId: string) => {
       const peer = peersRef.current.find((p) => p.peerId === senderClientId);
       if (peer?.connection) {
+        // Clear pending offer flag
+        pendingLocalOfferRef.current.delete(senderClientId);
+        
+        // Check signalingState before setting remote description
+        if (peer.connection.signalingState !== 'stable') {
+          console.log(`📥 Handling answer for ${senderClientId}, signalingState: ${peer.connection.signalingState}`);
+        }
+        
         peer.connection.setRemoteDescription(new RTCSessionDescription(answer))
           .then(() => {
-            console.log(`Remote description set for ${senderClientId}`);
+            console.log(`✅ Remote description set for ${senderClientId}`);
           })
           .catch((err) => console.error('Failed to set remote description:', err));
       }
@@ -276,8 +360,12 @@ export function useWebRTC({
     (candidate: RTCIceCandidateInit, senderClientId: string) => {
       const peer = peersRef.current.find((p) => p.peerId === senderClientId);
       if (peer?.connection) {
+        console.log(`🧊 Adding ICE candidate from ${senderClientId}:`, candidate ? candidate.candidate : 'null');
         peer.connection.addIceCandidate(new RTCIceCandidate(candidate))
+          .then(() => console.log(`✅ ICE candidate added from ${senderClientId}`))
           .catch((err) => console.error('Failed to add ICE candidate:', err));
+      } else {
+        console.warn(`⚠️ No peer connection found for ICE candidate from ${senderClientId}`);
       }
     },
     []

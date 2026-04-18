@@ -213,28 +213,19 @@ export default function ClassroomPage() {
   }, [socket]);
 
   // Track if we've already initialized to prevent duplicates
+  // Use a single ref for socket initialization
   const initializedRef = useRef(false);
 
   // Store createOffer in ref to prevent infinite loop
   const createOfferRef = useRef(createOffer);
   createOfferRef.current = createOffer;
-
-  // Initialize socket connection
+  
   useEffect(() => {
-    // Prevent duplicate initialization - but allow re-init if auth was not ready
-    // Check if we already have a socket AND have valid auth
-    if (socket && userId && tenantId) {
-      // Already initialized with valid auth
+    // Prevent duplicate initialization
+    if (initializedRef.current) {
       return;
     }
     
-    // If we have a socket but no auth, disconnect and re-init
-    if (socket && (!userId || !tenantId)) {
-      console.log('Auth cleared, re-initializing...');
-      socket.disconnect();
-      setSocket(null);
-    }
-
     // Set loading to false after short timeout (500ms) - ALWAYS, even if auth not ready
     // This prevents getting stuck on "Joining classroom" screen
     const timer = setTimeout(() => {
@@ -257,13 +248,20 @@ export default function ClassroomPage() {
     }
 
     // Now we have auth ready, proceed with socket connection
-
     const SOCKET_URL = process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws')
       ? `${process.env.NEXT_PUBLIC_API_URL?.replace('http', 'ws')}/classroom`
       : 'ws://164.68.119.230:3000/classroom';
 
-    const newSocket = io(SOCKET_URL, { transports: ['websocket'] });
+    // Create new socket with explicit cleanup and reconnection
+    const newSocket = io(SOCKET_URL, { 
+      transports: ['websocket'],
+      reconnection: true,
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+    });
+    
     setSocket(newSocket);
+    initializedRef.current = true;
 
     newSocket.on('connect', () => {
       console.log('Socket connected, joining classroom...');
@@ -447,8 +445,11 @@ export default function ClassroomPage() {
       createOfferRef.current(data.clientId);
     });
     return () => { 
+      console.log('🧹 Cleaning up socket connection...');
       clearTimeout(timer); 
-      newSocket.disconnect();
+      if (newSocket) {
+        newSocket.disconnect();
+      }
       initializedRef.current = false;
     };
   }, [sessionId, userId, tenantId, userName]);
