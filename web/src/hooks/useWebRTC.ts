@@ -203,20 +203,64 @@ export function useWebRTC({
     return pc;
   }, [mediaManager, socket, sessionId, iceServers]);
 
-  // Create offer to a specific peer
+  // Create offer to a specific peer - ALWAYS create new offer for re-negotiation
+  // This enables adding tracks after initial connection is established
   const createOffer = useCallback(
-    (targetClientId: string) => {
-      // Don't create duplicate connections
-      if (peersRef.current.some(p => p.peerId === targetClientId)) {
-        console.log(`Already connected to ${targetClientId}, skipping offer`);
+    async (targetClientId: string) => {
+      // Get existing peer connection or create new one
+      let pc: RTCPeerConnection | undefined;
+      let existingPeer = peersRef.current.find(p => p.peerId === targetClientId);
+      
+      if (existingPeer?.connection) {
+        // Reuse existing connection but force new negotiation
+        pc = existingPeer.connection;
+        console.log(`♻️ Reusing existing peer connection for ${targetClientId}, initiating re-negotiation...`);
+        
+        // Mark as initiator so we can create new offers
+        isInitiatorRef.current.add(targetClientId);
+        
+        // Add any new local tracks that might not be sent yet
+        const localStream = mediaManager.getStream();
+        if (localStream) {
+          localStream.getTracks().forEach((track) => {
+            // Check if track is already sent
+            const senders = pc!.getSenders();
+            const hasTrack = senders.some(s => s.track?.id === track.id);
+            if (!hasTrack) {
+              console.log(`➕ Adding new track to existing peer: ${track.kind}`);
+              pc!.addTrack(track, localStream);
+            }
+          });
+        }
+        
+        // Mark pending offer
+        pendingLocalOfferRef.current.add(targetClientId);
+        
+        try {
+          const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: true,
+          });
+          await pc.setLocalDescription(offer);
+          
+          socket?.emit('webrtc-offer', {
+            targetClientId,
+            offer: pc.localDescription,
+            sessionId,
+          });
+          console.log(`📤 Sent re-negotiation offer to ${targetClientId}`);
+        } catch (err) {
+          console.error('Failed to create re-negotiation offer:', err);
+        }
         return;
       }
       
+      // No existing connection - create new one
       // Mark that we have a pending local offer
       pendingLocalOfferRef.current.add(targetClientId);
       
-      console.log(`📤 Creating WebRTC offer to ${targetClientId} (pending: ${pendingLocalOfferRef.current.has(targetClientId)})`);
-      const pc = createPeerConnection(targetClientId, true);
+      console.log(`📤 Creating NEW WebRTC offer to ${targetClientId}`);
+      pc = createPeerConnection(targetClientId, true);
       
       setPeers((prev) => [...prev.filter((p) => p.peerId !== targetClientId), {
         peerId: targetClientId,
@@ -226,24 +270,28 @@ export function useWebRTC({
       }]);
       setConnectionStates((prev) => ({ ...prev, [targetClientId]: 'connecting' }));
 
-      pc.createOffer()
-        .then((offer) => pc.setLocalDescription(offer))
-        .then(() => {
-          socket?.emit('webrtc-offer', {
-            targetClientId,
-            offer: pc.localDescription,
-            sessionId,
-          });
-        })
-        .catch((err) => {
-          console.error('Failed to create offer:', err);
-          setConnectionStates((prev) => ({ ...prev, [targetClientId]: 'failed' }));
+      try {
+        const offer = await pc.createOffer({
+          offerToReceiveAudio: true,
+          offerToReceiveVideo: true,
         });
+        await pc.setLocalDescription(offer);
+        
+        socket?.emit('webrtc-offer', {
+          targetClientId,
+          offer: pc.localDescription,
+          sessionId,
+        });
+        console.log(`📤 Sent initial offer to ${targetClientId}`);
+      } catch (err) {
+        console.error('Failed to create offer:', err);
+        setConnectionStates((prev) => ({ ...prev, [targetClientId]: 'failed' }));
+      }
     },
-    [createPeerConnection, socket, sessionId]
+    [createPeerConnection, socket, sessionId, mediaManager]
   );
 
-  // Handle incoming offer
+  // Handle incoming offer - with Perfect Negotiation (Polite Peer) support
   const handleOffer = useCallback(
     async (offer: RTCSessionDescriptionInit, senderClientId: string) => {
       console.log(`📥 Handling offer from ${senderClientId}`);
@@ -253,24 +301,41 @@ export function useWebRTC({
       let existingPeer = peersRef.current.find(p => p.peerId === senderClientId);
       
       // Check signaling state for offer collision handling
+      // Polite peer must rollback their local offer and accept remote
+      let needsToProcessOffer = true;
+      
       if (existingPeer?.connection && existingPeer.connection.signalingState !== 'stable') {
         console.log(`⚠️ Offer collision detected! signalingState: ${existingPeer.connection.signalingState}`);
         
-        // If we're the polite peer, we yield - close our pending connection and accept remote
+        // If we're the polite peer, we yield - rollback local offer and accept remote
         if (isPoliteRef.current[senderClientId]) {
-          console.log(`🤝 POLITE PEER YIELDING: Closing local offer, accepting remote offer from ${senderClientId}`);
+          console.log(`🤝 POLITE PEER YIELDING: Rolling back local offer, accepting remote from ${senderClientId}`);
+          
+          // Rollback: close the connection and start fresh as answerer
           existingPeer.connection.close();
+          
+          // Remove from refs
+          peersRef.current = peersRef.current.filter(p => p.peerId !== senderClientId);
+          setPeers(prev => prev.filter(p => p.peerId !== senderClientId));
+          isInitiatorRef.current.delete(senderClientId);
+          pendingLocalOfferRef.current.delete(senderClientId);
           existingPeer = undefined;
+          
+          // Proceed to process the incoming offer as answerer
+          needsToProcessOffer = true;
         } else {
           // Impolite peer - we keep our offer, ignore the remote one
           console.log(`✊ IMPOLITE PEER INSISTING: Keeping local offer, ignoring remote from ${senderClientId}`);
-          return;
+          needsToProcessOffer = false;
         }
       }
       
-      // Check if we already have a connection
+      if (!needsToProcessOffer) {
+        return;
+      }
+      
+      // Clean up existing peer connection if any
       if (existingPeer) {
-        // Close existing and recreate
         existingPeer.connection.close();
         peersRef.current = peersRef.current.filter(p => p.peerId !== senderClientId);
         setPeers(prev => prev.filter(p => p.peerId !== senderClientId));
