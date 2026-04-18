@@ -41,6 +41,12 @@ export default function ClassroomPage() {
   const socketRef = useRef<Socket | null>(null);
   const [socketState, setSocketState] = useState<Socket | null>(null); // For UI rendering
   const [myClientId, setMyClientId] = useState<string>(''); // Stable clientId from server
+  const myClientIdRef = useRef<string>(''); // Ref for accessing current value in callbacks
+
+  // Update ref when myClientId changes
+  useEffect(() => {
+    myClientIdRef.current = myClientId;
+  }, [myClientId]);
 
   // Stable socket getter - always returns current socket without triggering re-renders
   const socket = socketRef.current;
@@ -435,9 +441,13 @@ export default function ClassroomPage() {
       hasAudio: boolean 
     }) => {
       console.log('participant-joined-media:', data);
+      // Use ref to get current myClientId (avoids stale closure)
+      const currentMyClientId = myClientIdRef.current;
+      console.log('My clientId:', currentMyClientId, 'Peer clientId:', data.clientId);
+      
       // Create WebRTC connection to this peer regardless of whether we have local media
       // They may want to send their media to us, even if we don't have media to send
-      if (data.clientId !== myClientId) {
+      if (data.clientId !== currentMyClientId) {
         console.log('Creating WebRTC offer for participant-joined-media:', data.clientId);
         createOfferRef.current(data.clientId);
       }
@@ -446,8 +456,11 @@ export default function ClassroomPage() {
     // Legacy: Listen for media-ready events to establish WebRTC connections
     newSocket.on('media-ready', (data: { clientId: string; hasVideo: boolean; hasAudio: boolean }) => {
       console.log('Peer ready for media:', data, 'my stream:', localStreamRef.current?.getTracks().length);
+      // Use ref to get current myClientId (avoids stale closure)
+      const currentMyClientId = myClientIdRef.current;
+      
       // Ignore our own media-ready events
-      if (data.clientId === myClientId) return;
+      if (data.clientId === currentMyClientId) return;
       
       // Create WebRTC connection to this peer regardless of whether we have local media
       // They may want to send their media to us
