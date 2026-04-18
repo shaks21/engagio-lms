@@ -243,13 +243,45 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     });
 
     // HYDRATION: Build current participants list for the joining user
-    const currentParticipants = Array.from(room.participants.values()).map(p => ({
-      clientId: p.clientId,
-      userId: p.userId,
-      userName: p.userName,
-      joinedAt: p.joinedAt.toISOString(),
-      mediaState: p.mediaState,
-    }));
+    // Also check Socket.io rooms for participants that might have connected before server restart
+    const socketRoomMembers = this.server.sockets.adapter.rooms.get(`session::${sessionId}`);
+    const knownParticipants = Array.from(room.participants.values());
+    const socketMemberIds = socketRoomMembers ? Array.from(socketRoomMembers).filter(id => id !== client.id) : [];
+    
+    // Build participant list from both in-memory state AND socket room members
+    const currentParticipantsMap = new Map();
+    
+    // Add known participants from in-memory store
+    for (const p of knownParticipants) {
+      currentParticipantsMap.set(p.clientId, {
+        clientId: p.clientId,
+        userId: p.userId,
+        userName: p.userName,
+        joinedAt: p.joinedAt.toISOString(),
+        mediaState: p.mediaState,
+      });
+    }
+    
+    // Also check if there are socket room members we don't know about (e.g., after server restart)
+    // For these, we need to emit a request to get their info
+    for (const socketId of socketMemberIds) {
+      const sock = this.server.sockets.sockets.get(socketId);
+      if (sock && sock.data.userId) {
+        const tempClientId = `${sock.data.userId}-${sessionId}`.slice(0, 36);
+        if (!currentParticipantsMap.has(tempClientId)) {
+          // New participant we don't have info for - add with minimal info
+          currentParticipantsMap.set(tempClientId, {
+            clientId: tempClientId,
+            userId: sock.data.userId,
+            userName: sock.data.userName || sock.data.userId.slice(0, 8),
+            joinedAt: new Date().toISOString(),
+            mediaState: { hasVideo: false, hasAudio: false, isScreenSharing: false },
+          });
+        }
+      }
+    }
+    
+    const currentParticipants = Array.from(currentParticipantsMap.values());
 
     // EMIT: Send classroom-ready with full participant list to the JOINING user directly
     // This is the key fix - explicitly emit the event to the client

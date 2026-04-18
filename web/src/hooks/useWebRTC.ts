@@ -329,25 +329,18 @@ export function useWebRTC({
       
       console.log(`Participant ${data.clientId} has media, creating offer...`);
       
-      // Small delay to ensure they're ready
-      setTimeout(() => {
-        const stream = mediaManager.getStream();
-        if (stream && stream.getTracks().length > 0) {
-          createOffer(data.clientId);
-        }
-      }, 500);
+      // Create offer regardless of whether we have local media
+      // They may want to send their media to us
+      createOffer(data.clientId);
     });
 
     // Also listen to user-joined to initiate WebRTC if we have media
     socket.on('user-joined', (data: { clientId: string; userId: string }) => {
       if (data.clientId === clientId) return;
       
-      // If we have local media, create offer to new participant
-      const stream = mediaManager.getStream();
-      if (stream && stream.getTracks().length > 0) {
-        console.log(`New user ${data.clientId} joined, creating offer...`);
-        createOffer(data.clientId);
-      }
+      // Create offer to new participant regardless of whether we have local media
+      console.log(`New user ${data.clientId} joined, creating offer...`);
+      createOffer(data.clientId);
     });
 
     return () => {

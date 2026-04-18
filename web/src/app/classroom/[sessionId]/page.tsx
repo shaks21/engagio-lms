@@ -381,8 +381,9 @@ export default function ClassroomPage() {
       hasAudio: boolean 
     }) => {
       console.log('participant-joined-media:', data);
-      // If we have local media, create a WebRTC connection to this peer
-      if (localStreamRef.current && localStreamRef.current.getTracks().length > 0 && data.clientId !== myClientId) {
+      // Create WebRTC connection to this peer regardless of whether we have local media
+      // They may want to send their media to us, even if we don't have media to send
+      if (data.clientId !== myClientId) {
         console.log('Creating WebRTC offer for participant-joined-media:', data.clientId);
         createOfferRef.current(data.clientId);
       }
@@ -394,11 +395,10 @@ export default function ClassroomPage() {
       // Ignore our own media-ready events
       if (data.clientId === myClientId) return;
       
-      // If we have local media, create a WebRTC connection to this peer
-      if (localStreamRef.current && localStreamRef.current.getTracks().length > 0) {
-        console.log('Creating WebRTC offer for media-ready peer:', data.clientId);
-        createOfferRef.current(data.clientId);
-      }
+      // Create WebRTC connection to this peer regardless of whether we have local media
+      // They may want to send their media to us
+      console.log('Creating WebRTC offer for media-ready peer:', data.clientId);
+      createOfferRef.current(data.clientId);
     });
     return () => { 
       clearTimeout(timer); 
