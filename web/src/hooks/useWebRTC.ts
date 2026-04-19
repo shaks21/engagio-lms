@@ -48,7 +48,7 @@ export function useWebRTC({
   // Track pending local offers to detect collisions
   const pendingLocalOfferRef = useRef<Set<string>>(new Set());
 
-  // ICE servers - STUN only for now (TURN can cause crashes if server unavailable)
+  // ICE servers - STUN + Free TURN
   const iceServers: RTCIceServer[] = useMemo(() => [
     // Google STUN servers - reliable and free
     { urls: 'stun:stun.l.google.com:19302' },
@@ -56,6 +56,8 @@ export function useWebRTC({
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
+    // Free TURN from Open Relay Project (no auth required)
+    { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
   ], []);
 
   const createPeerConnection = useCallback((peerId: string, initiator: boolean = true): RTCPeerConnection => {
