@@ -56,8 +56,12 @@ export function useWebRTC({
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
-    // Free TURN from Open Relay Project (no auth required)
+    // Twilio free STUN
+    { urls: 'stun:global.stun.twilio.com:3478' },
+    // Free TURN from Open Relay Project
     { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    // Alternative free TURN
+    { urls: 'turn:relay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
   ], []);
 
   const createPeerConnection = useCallback((peerId: string, initiator: boolean = true): RTCPeerConnection => {
