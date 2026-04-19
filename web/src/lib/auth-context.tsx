@@ -45,7 +45,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+  const API = process.env.NEXT_PUBLIC_API_URL ; //|| 'http://localhost:3000';
 
   // Fetch current user on mount
   useEffect(() => {
