@@ -597,6 +597,46 @@ export function useWebRTC({
       createOffer(data.clientId);
     });
 
+    // CRITICAL: Listen for media state updates (e.g., when someone turns on camera AFTER joining)
+    // This fixes the bug where camera/audio won't share if turned on after peers already joined
+    socket.on('participant-media-update', (data: { clientId: string; userId: string; hasVideo: boolean; hasAudio: boolean }) => {
+      if (data.clientId === clientId) return;
+      
+      console.log(`Participant ${data.clientId} media updated: video=${data.hasVideo}, audio=${data.hasAudio}, creating offer...`);
+      
+      // If we already have a peer connection, add tracks and renegotiate
+      const existingPeer = peersRef.current.find(p => p.peerId === data.clientId);
+      const localStream = localStreamRef.current;
+      
+      if (existingPeer && localStream) {
+        // Add local tracks to existing peer connection if not already added
+        localStream.getTracks().forEach(track => {
+          const senders = existingPeer.connection.getSenders();
+          const hasTrack = senders.some(s => s.track?.kind === track.kind);
+          if (!hasTrack) {
+            console.log(`Adding ${track.kind} track to existing peer connection for ${data.clientId}`);
+            existingPeer.connection.addTrack(track, localStream);
+          }
+        });
+        
+        // Trigger renegotiation to send the new tracks
+        existingPeer.connection.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: true })
+          .then(offer => existingPeer.connection.setLocalDescription(offer))
+          .then(() => {
+            const targetSocketId = data.clientId; // clientId IS the socket ID in this implementation
+            socket.emit('webrtc-offer', {
+              targetClientId: data.clientId,
+              offer: existingPeer.connection.localDescription,
+              sessionId,
+            });
+          })
+          .catch(err => console.error('Failed to renegotiate after media update:', err));
+      } else {
+        // No existing peer - create a new one
+        createOffer(data.clientId);
+      }
+    });
+
     return () => {
       socket.off('webrtc-offer', handleOffer as any);
       socket.off('webrtc-answer', handleAnswer as any);
@@ -604,6 +644,7 @@ export function useWebRTC({
       socket.off('user-left', handleUserLeft);
       socket.off('participant-joined-media');
       socket.off('user-joined');
+      socket.off('participant-media-update');
     };
   }, [socket, clientId, handleOffer, handleAnswer, handleIceCandidate, handleUserLeft, createOffer, mediaManager]);
 
