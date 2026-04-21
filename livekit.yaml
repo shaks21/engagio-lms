@@ -1,0 +1,4 @@
+port: 7880
+
+keys:
+  devkey: "32character_secret_key_for_engagio_lms_v1"

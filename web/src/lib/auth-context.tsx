@@ -47,7 +47,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const API = process.env.NEXT_PUBLIC_API_URL ; //|| 'http://localhost:3000';
 
-  // Fetch current user on mount
+  // Track token to trigger re-auth when registration sets it
+  const [tokenVersion, setTokenVersion] = useState(0);
+
+  // Fetch current user on mount and whenever token changes (e.g., after registration)
   useEffect(() => {
     const fetchUser = async () => {
       const token = localStorage.getItem(TOKEN_KEY);
@@ -76,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     fetchUser();
-  }, []);
+  }, [API, tokenVersion]);
 
   const login = useCallback(async (email: string, password: string) => {
     const response = await axios.post(
@@ -87,11 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { accessToken, user: userData } = response.data;
     localStorage.setItem(TOKEN_KEY, accessToken);
     setUser(userData);
-  }, []);
+    setTokenVersion(v => v + 1); // Trigger re-auth
+  }, [API]);
 
   const logout = useCallback(() => {
     localStorage.removeItem(TOKEN_KEY);
     setUser(null);
+    setTokenVersion(v => v + 1); // Reset auth state
   }, []);
 
   const isAuthenticated = user !== null;

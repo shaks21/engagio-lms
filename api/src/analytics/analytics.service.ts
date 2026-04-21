@@ -22,7 +22,7 @@ export class AnalyticsService {
       _count: true,
     });
     const eventTypeCounts = events.reduce((acc, e) => {
-      acc[e.type] = e._count;
+      acc[e.type as string] = e._count;
       return acc;
     }, {} as Record<string, number>);
 
@@ -54,7 +54,7 @@ export class AnalyticsService {
 
     return {
       totalDwellTime, totalEvents, totalSessions: sessions.length, sessions,
-      eventBreakdown: eventBreakdown.reduce((acc, e) => { acc[e.type] = e._count; return acc; }, {} as Record<string, number>),
+      eventBreakdown: eventBreakdown.reduce((acc, e) => { acc[e.type as string] = e._count; return acc; }, {} as Record<string, number>),
     };
   }
 
@@ -98,7 +98,7 @@ export class AnalyticsService {
       where: { id: { in: userIds } },
       select: { id: true, email: true, role: true },
     });
-    const userMap = new Map(users.map((u) => [u.id, u]));
+    const userMap = new Map<string, { email: string; role: string }>(users.map((u) => [u.id, u as { email: string; role: string }]));
 
     return [...seen.values()].map((s) => ({
       userId: s.userId,
@@ -174,7 +174,7 @@ export class AnalyticsService {
       where: { id: { in: userIds } },
       select: { id: true, email: true },
     });
-    const userMap = new Map(users.map((u) => [u.id, u]));
+    const userMap = new Map<string, { email: string }>(users.map((u) => [u.id, u as { email: string }]));
 
     return [...seen.values()].map((s) => ({
       userId: s.userId,

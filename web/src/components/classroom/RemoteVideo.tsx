@@ -1,138 +1,82 @@
 'use client';
 
-import { useRef, useEffect, useState } from 'react';
+import { useEffect, useRef } from 'react';
+import { useParticipants } from '@/lib/livekit-context';
+import { Participant, Track } from 'livekit-client';
 
-interface RemoteVideoProps {
-  stream: MediaStream | null;
-  participantName: string;
-  peerId: string;
-  connectionState?: 'disconnected' | 'connecting' | 'connected' | 'failed';
+export interface RemoteVideoProps {
+  participantIdentity?: string;
 }
 
-export default function RemoteVideo({ stream, participantName, peerId, connectionState }: RemoteVideoProps) {
+export default function RemoteVideo({ participantIdentity }: RemoteVideoProps) {
+  const participants = useParticipants() as Participant[];
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [debugInfo, setDebugInfo] = useState({ videoTracks: 0, audioTracks: 0, state: 'no-stream' });
 
-  // Update debug info when stream changes
-  useEffect(() => {
-    if (stream) {
-      const videoTracks = stream.getVideoTracks().length;
-      const audioTracks = stream.getAudioTracks().length;
-      setDebugInfo({
-        videoTracks,
-        audioTracks,
-        state: 'stream-received',
-      });
-      console.log(`📊 Debug info for ${participantName}: video=${videoTracks}, audio=${audioTracks}`);
-    } else {
-      setDebugInfo({ videoTracks: 0, audioTracks: 0, state: 'no-stream' });
-    }
-  }, [stream, participantName]);
+  // Find participant by identity string
+  const resolvedParticipant = participants.find((p) => p.identity === participantIdentity);
 
-  // Use useEffect to bind srcObject - prevents React render misses
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !stream) return;
+    if (!video) return;
+    if (!resolvedParticipant) { video.srcObject = null; return; }
+
+    // LiveKit: get video track from participant
+    const videoTrackPublication = resolvedParticipant.getTrackPublication(Track.Source.Camera);
+    if (!videoTrackPublication) { video.srcObject = null; return; }
     
-    console.log("📺 RemoteVideo stream updated:", stream.id, "Tracks:", stream.getTracks().length);
-    
-    // Bind stream to video element
+    const mediaStreamTrack = videoTrackPublication.videoTrack?.mediaStreamTrack;
+    if (!mediaStreamTrack) { video.srcObject = null; return; }
+
+    const stream = new MediaStream([mediaStreamTrack]);
+    console.log('📺 RemoteVideo stream updated:', stream.id, 'Tracks:', stream.getTracks().length);
     video.srcObject = stream;
-    
-    // Force play with onloadedmetadata to handle autoplay policy
-    video.onloadedmetadata = () => {
-      video.play().catch((err) => {
-        console.error(`Autoplay blocked for ${participantName}:`, err);
-      });
-    };
-    
-    // onCanPlay handler - explicitly call play() when video is ready
-    video.oncanplay = () => {
-      console.log(`▶️ onCanPlay fired for ${participantName}`);
-      video.play().catch((err) => {
-        console.warn(`Play on canplay failed for ${participantName}:`, err);
-      });
-    };
-    
-    // Also try play immediately in case metadata already loaded
-    video.play().catch((err) => {
-      console.warn(`Failed to play video for ${participantName}:`, err);
+
+    video.onloadedmetadata = () => video.play().catch((err) => {
+      console.error('Autoplay blocked for', resolvedParticipant.name, ':', err);
     });
-    
-    // Handle the case where tracks are added LATER to an existing stream
-    const handleTrackAdded = () => {
-      console.log("➕ New track added to stream, refreshing video:", stream.id);
-      // Reset and rebind to trigger video element update
-      video.srcObject = null;
+
+    video.oncanplay = () => video.play().catch((err) => {
+      console.warn('Play on canplay failed for', resolvedParticipant.name, ':', err);
+    });
+
+    video.play().catch((err) => {
+      console.warn('Failed to play video for', resolvedParticipant.name + ':', err);
+    });
+
+    // Use generic event listener to avoid type issues
+    const onTrackAdded: EventListener = (e: Event) => {
+      console.log('➕ New track added for', resolvedParticipant.name);
       video.srcObject = stream;
       video.play().catch(console.warn);
     };
-    
-    stream.addEventListener('addtrack', handleTrackAdded);
-    
-    // Cleanup when stream changes or component unmounts
+
+    stream.addEventListener('addtrack', onTrackAdded);
+
     return () => {
-      stream.removeEventListener('addtrack', handleTrackAdded);
-      if (!stream) {
-        video.srcObject = null;
-      }
+      stream.removeEventListener('addtrack', onTrackAdded);
+      video.srcObject = null;
     };
-  }, [stream, participantName]);
+  }, [resolvedParticipant?.identity]);
 
-  // Handle track additions dynamically (for when peer adds mic/camera mid-call)
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video || !stream) return;
-
-    const handleTrack = () => {
-      video.play().catch(console.warn);
-    };
-
-    stream.getTracks().forEach(track => {
-      track.addEventListener('ended', () => {
-        console.log(`Track ended for ${participantName}:`, track.kind);
-      });
-    });
-
-  }, [stream, participantName]);
-
-  if (!stream) {
+  if (!resolvedParticipant) {
     return (
       <div className="relative bg-gray-800 rounded-xl aspect-video flex items-center justify-center overflow-hidden">
         <div className="text-center">
           <div className="w-16 h-16 rounded-full bg-gray-600 flex items-center justify-center mx-auto mb-2 text-2xl">
-            {(participantName?.charAt(0) || 'U').toUpperCase()}
+            {participantIdentity?.charAt(0).toUpperCase()}
           </div>
-          <p className="text-sm font-medium text-gray-300">{participantName}</p>
-          <p className="text-xs text-gray-500">Connecting...</p>
-        </div>
-        {/* Debug overlay */}
-        <div className="absolute top-2 right-2 bg-red-600/80 px-2 py-1 rounded text-xs text-white">
-          {debugInfo.state}
+          <p className="text-sm font-medium text-gray-300">{participantIdentity}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative bg-gray-800 rounded-xl aspect-video flex items-center justify-center overflow-hidden">
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="w-full h-full object-cover"
-      />
-      {/* Participant name */}
-      <div className="absolute bottom-2 left-2 bg-black/50 px-2 py-1 rounded text-xs text-white">
-        {participantName}
-      </div>
-      {/* LIVE STREAM MONITOR DEBUG OVERLAY */}
-      <div className="absolute top-2 right-2 bg-green-600/80 px-2 py-1 rounded text-xs text-white flex flex-col gap-0.5">
-        <div>ICE: {connectionState || 'unknown'}</div>
-        <div>Video: {debugInfo.videoTracks}</div>
-        <div>Audio: {debugInfo.audioTracks}</div>
-      </div>
-    </div>
+    <video
+      ref={videoRef}
+      autoPlay
+      playsInline
+      className="w-full h-full object-cover"
+    />
   );
 }

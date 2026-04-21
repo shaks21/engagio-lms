@@ -9,6 +9,7 @@ import Toolbar from '@/components/classroom/Toolbar';
 import ParticipantsPanel from '@/components/classroom/Participants';
 import RemoteVideo from '@/components/classroom/RemoteVideo';
 import { useWebRTC } from "@/hooks/useWebRTC";
+import { useParticipants } from "@/lib/livekit-context";
 import Chat from '@/components/classroom/Chat';
 import Timer from '@/components/classroom/Timer';
 
@@ -82,6 +83,8 @@ export default function ClassroomPage() {
     setConnectionStates,
     clientId: myClientId || '', // Use stable clientId from server
   });
+
+  const allParticipants = useParticipants();
 
   // Initialize media devices (camera and microphone)
   const initializeMedia = useCallback(async (enableCamera: boolean = false, enableMic: boolean = true) => {
@@ -551,7 +554,7 @@ export default function ClassroomPage() {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-900 text-white">
         <div className="text-center">
-          <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-10 h-10 border-4 border-blue-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p>Joining classroom...</p>
         </div>
       </div>
@@ -668,13 +671,7 @@ export default function ClassroomPage() {
               
               {/* Remote participants with WebRTC streams - using RemoteVideo component */}
               {remotePeers.map((peer) => (
-                <RemoteVideo 
-                  key={peer.peerId}
-                  peerId={peer.peerId}
-                  stream={peer.remoteStream}
-                  participantName={participants.find(p => p.clientId === peer.peerId)?.name || 'Participant'}
-                  connectionState={connectionStates[peer.peerId]}
-                />
+                <RemoteVideo key={peer.peerId} participantIdentity={peer.peerId} />
               ))}
               
               {/* Other participants without WebRTC connection yet (show avatar) */}

@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import Link from 'next/link';
+import { useAuth } from '@/lib/auth-context';
 
 type Role = 'STUDENT' | 'TEACHER' | 'ADMIN';
 
@@ -15,6 +16,7 @@ export default function RegisterPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const router = useRouter();
+  const { login } = useAuth();
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -29,14 +31,8 @@ export default function RegisterPage() {
         role,
       });
 
-      // After registration, auto-login
-      const loginResponse = await axios.post(
-        `${API}/auth/login`,
-        { email, password }
-      );
-
-      const { accessToken, user } = loginResponse.data;
-      localStorage.setItem('engagio_token', accessToken);
+      // After registration, use context login to bump tokenVersion
+      await login(email, password);
 
       router.push('/dashboard');
     } catch (err: any) {

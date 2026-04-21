@@ -1,3 +1,4 @@
+---
 services:
   postgres:
     image: postgres:17-alpine
@@ -57,34 +58,32 @@ services:
       KAFKA_ZOOKEEPER_CONNECT: engagio-zookeeper:2181
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://engagio-kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
-    volumes:
-      - kafka_data:/var/lib/kafka/data
-    healthcheck:
-      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
-      start_period: 40s
 
+  livekit-server:
+    image: livekit/livekit-server:latest
+    container_name: livekit-server
+    restart: unless-stopped
+    network_mode: "host"
+    volumes:
+      - ./livekit.yaml:/etc/livekit/config.yaml:ro
+    environment:
+      # Force port range via environment (YAML parser workaround)
+      - LIVEKIT_RTC_PORT_RANGE_START=50000
+      - LIVEKIT_RTC_PORT_RANGE_END=60000
+      - LIVEKIT_RTC_UDP_PORT=7882
+      - LIVEKIT_NODE_IP=164.68.119.230
+    command: ["--config", "/etc/livekit/config.yaml", "--node-ip", "164.68.119.230"]
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: engagio-pgadmin
     restart: unless-stopped
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@engagio.io
-      PGADMIN_DEFAULT_PASSWORD: admin_secret
     ports:
       - "5050:80"
-    depends_on:
-      - postgres
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@engagio.com
+      PGADMIN_DEFAULT_PASSWORD: admin
 
 volumes:
   postgres_data:
   redis_data:
   zookeeper_data:
-  kafka_data:
