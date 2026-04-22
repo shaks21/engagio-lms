@@ -3,15 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3001",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3001",
     "lint": "next lint",
     "test:e2e": "playwright test",
     "test:sync": "playwright test e2e/classroom-sync.spec.ts",
     "test:sync:ui": "playwright test e2e/classroom-sync.spec.ts --ui"
   },
   "dependencies": {
+    "@livekit/components-react": "^2.9.20",
+    "@livekit/components-styles": "^1.2.0",
     "axios": "^1.14.0",
     "livekit-client": "^2.18.3",
     "next": "^16.0.0",
@@ -32,6 +34,7 @@
     "@types/react-dom": "^19.0.0",
     "pg": "^8.11.0",
     "prisma": "^7.0.0",
+    "puppeteer": "^24.42.0",
     "typescript": "^5.7.0"
   }
 }
