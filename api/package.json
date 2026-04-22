@@ -37,6 +37,7 @@
     "dotenv": "^17.4.0",
     "ioredis": "^5.10.1",
     "kafkajs": "^2.2.4",
+    "livekit-server-sdk": "^2.15.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pg": "^8.20.0",

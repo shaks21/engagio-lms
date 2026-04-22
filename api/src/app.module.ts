@@ -10,6 +10,7 @@ import { EnrollmentModule } from "./enrollment/enrollment.module";
 import { SessionModule } from "./session/session.module";
 import { AnalyticsModule } from "./analytics/analytics.module";
 import { TenancyModule } from "./tenancy/tenancy.module";
+import { LivekitModule } from "./livekit/livekit.module";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 

@@ -1,0 +1,5 @@
+---
+name: livekit-sfu-integration
+category: webrtc
+description: LiveKit SFU integration replacing manual WebRTC
+status: complete

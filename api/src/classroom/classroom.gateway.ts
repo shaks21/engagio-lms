@@ -351,23 +351,26 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     // Broadcast real-time events to all participants in the session
     const sessionSocket = `session::${sessionId}`;
+    
+    // Get stable clientId for this user in this session
+    const stableClientId = this.socketToClientId.get(client.id);
 
     if (data.type === "MIC") {
       this.server.to(sessionSocket).emit("participant-media-update", {
         userId: userId,
-        clientId: client.id,
+        clientId: stableClientId || client.id,
         micActive: (data.payload as { active?: boolean })?.active ?? true,
       });
     } else if (data.type === "CAMERA") {
       this.server.to(sessionSocket).emit("participant-media-update", {
         userId: userId,
-        clientId: client.id,
+        clientId: stableClientId || client.id,
         cameraActive: (data.payload as { active?: boolean })?.active ?? true,
       });
     } else if (data.type === "SCREEN_SHARE") {
       this.server.to(sessionSocket).emit("participant-media-update", {
         userId: userId,
-        clientId: client.id,
+        clientId: stableClientId || client.id,
         screenShareActive: (data.payload as { active?: boolean })?.active ?? true,
       });
     } else if (data.type === "BLUR") {
