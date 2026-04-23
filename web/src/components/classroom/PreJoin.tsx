@@ -53,29 +53,42 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
 
   // Update preview when camera enabled
   useEffect(() => {
-    let stream: MediaStream | null = null;
+    let active = true;
 
     if (cameraEnabled && cameraAvailable) {
       getMediaDeviceStream({ video: true, audio: false })
         .then((s) => {
-          stream = s;
+          if (!active) {
+            s.getTracks().forEach((t) => t.stop());
+            return;
+          }
           setPreviewStream(s);
-          if (videoRef.current) videoRef.current.srcObject = s;
         })
         .catch(() => setError('Unable to access camera'));
     } else {
-      if (previewStream) {
-        previewStream.getTracks().forEach((t) => t.stop());
-        setPreviewStream(null);
-      }
-      if (videoRef.current) videoRef.current.srcObject = null;
+      setPreviewStream((prev) => {
+        prev?.getTracks().forEach((t) => t.stop());
+        return null;
+      });
     }
 
     return () => {
-      stream?.getTracks().forEach((t) => t.stop());
+      active = false;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cameraEnabled, cameraAvailable]);
+
+  // Bind stream to video element whenever either changes
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (previewStream) {
+      el.srcObject = previewStream;
+      el.play().catch(() => {});
+    } else {
+      el.srcObject = null;
+    }
+  }, [previewStream]);
 
   // Toggle preview when enabling mic
   useEffect(() => {

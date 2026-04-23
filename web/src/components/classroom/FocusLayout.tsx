@@ -4,12 +4,11 @@ import React from 'react';
 import {
   useLocalParticipant,
   useParticipants,
-  ParticipantContext,
-  ParticipantTile,
   useIsSpeaking,
 } from '@livekit/components-react';
 import type { Participant } from 'livekit-client';
-import { Pin } from 'lucide-react';
+import { Track } from 'livekit-client';
+import { Pin, MicOff } from 'lucide-react';
 
 export type ViewMode = 'focus' | 'grid' | 'immersive';
 
@@ -24,6 +23,70 @@ function getParticipantName(p: Participant): string {
   return p.name || p.identity || 'Unknown';
 }
 
+/* ─── Safe participant tile that never crashes ─── */
+function SafeParticipantTile({ participant }: { participant: Participant }) {
+  const isSpeaking = useIsSpeaking(participant);
+  const name = getParticipantName(participant);
+  const initials = name
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+
+  const cameraPub = participant.getTrackPublication(Track.Source.Camera);
+  const isCameraOn =
+    !!cameraPub && cameraPub.isSubscribed && !cameraPub.isMuted && !!cameraPub.track;
+  const micPub = participant.getTrackPublication(Track.Source.Microphone);
+  const isMicOn =
+    !!micPub && micPub.isSubscribed && !micPub.isMuted;
+
+  React.useEffect(() => {
+    const videoEl = videoRef.current;
+    if (videoEl && isCameraOn && cameraPub?.track) {
+      cameraPub.track.attach(videoEl);
+      return () => {
+        cameraPub.track?.detach(videoEl);
+      };
+    }
+  }, [isCameraOn, cameraPub]);
+
+  return (
+    <div className="h-full w-full relative">
+      {isCameraOn ? (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={participant.isLocal}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div className="h-full w-full flex items-center justify-center bg-gray-800/80">
+          <div className="w-20 h-20 rounded-full bg-engagio-600 flex items-center justify-center text-white text-3xl font-bold">
+            {initials}
+          </div>
+        </div>
+      )}
+
+      {/* Name bar */}
+      <div className="absolute bottom-0 left-0 right-0 px-3 py-2 bg-black/60 backdrop-blur-sm flex items-center gap-2">
+        <span className="text-sm font-medium text-white truncate">{name}</span>
+        {!isMicOn && <MicOff className="w-3.5 h-3.5 text-red-400" />}
+      </div>
+
+      {/* Speaking indicator */}
+      {isSpeaking && (
+        <div className="absolute top-2 right-2 px-2 py-0.5 bg-green-500/90 rounded text-[10px] text-white font-medium">
+          Speaking
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Small filmstrip thumbnail item ─── */
 function FilmstripItem({
   participant,
@@ -34,27 +97,14 @@ function FilmstripItem({
   isPinned?: boolean;
   onClick?: () => void;
 }) {
-  const isSpeaking = useIsSpeaking(participant);
-  const name = getParticipantName(participant);
-  const initials = name
-    .split(' ')
-    .map((n: string) => n[0])
-    .join('')
-    .toUpperCase()
-    .slice(0, 2);
-
   return (
     <button
       onClick={onClick}
       className={`relative flex-shrink-0 w-40 sm:w-48 h-24 sm:h-28 rounded-lg overflow-hidden transition-all group bg-gray-900 ${
-        isSpeaking
-          ? 'speaking-ring'
-          : 'ring-1 ring-gray-700 hover:ring-gray-500'
+        'ring-1 ring-gray-700 hover:ring-gray-500'
       } ${isPinned ? 'ring-2 ring-engagio-500' : ''}`}
     >
-      <ParticipantContext.Provider value={participant}>
-        <ParticipantTile />
-      </ParticipantContext.Provider>
+      <SafeParticipantTile participant={participant} />
 
       {isPinned && (
         <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 bg-engagio-600/90 rounded text-[9px] text-white font-medium flex items-center gap-1">
@@ -70,9 +120,7 @@ function FilmstripItem({
 function MainVideo({ participant }: { participant: Participant }) {
   return (
     <div className="h-full rounded-xl overflow-hidden bg-gray-900 ring-1 ring-gray-800">
-      <ParticipantContext.Provider value={participant}>
-        <ParticipantTile />
-      </ParticipantContext.Provider>
+      <SafeParticipantTile participant={participant} />
     </div>
   );
 }
@@ -81,9 +129,7 @@ function MainVideo({ participant }: { participant: Participant }) {
 function SelfCamera({ participant }: { participant: Participant }) {
   return (
     <div className="absolute bottom-20 right-4 w-56 sm:w-64 h-40 sm:h-44 rounded-xl overflow-hidden shadow-2xl z-30 ring-1 ring-gray-700 bg-gray-900">
-      <ParticipantContext.Provider value={participant}>
-        <ParticipantTile />
-      </ParticipantContext.Provider>
+      <SafeParticipantTile participant={participant} />
     </div>
   );
 }
@@ -136,9 +182,7 @@ export default function FocusLayout({
                 className="relative rounded-xl overflow-hidden bg-gray-900 cursor-pointer group"
                 onClick={() => onPinParticipant?.(p.sid)}
               >
-                <ParticipantContext.Provider value={p}>
-                  <ParticipantTile />
-                </ParticipantContext.Provider>
+                <SafeParticipantTile participant={p} />
               </div>
             ))}
           </div>
