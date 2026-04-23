@@ -4,161 +4,137 @@ import React, { useEffect, useState } from 'react';
 import AuthGuard from '@/components/auth-guard';
 import Sidebar from '@/components/ui/sidebar';
 import Card from '@/components/ui/card';
-import { getCourses, createCourse, deleteCourse, type Course } from '@/lib/api';
+import api from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { BookOpen, Plus, Users, Layers } from 'lucide-react';
+
+interface CourseItem {
+  id: string;
+  title: string;
+  description: string;
+  _count: { enrollments: number; sessions: number };
+  instructor: { email: string } | null;
+}
 
 export default function CoursesPage() {
-  const { userId } = useAuth();
-  const [courses, setCourses] = useState<Course[]>([]);
-  const [showCreate, setShowCreate] = useState(false);
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { user } = useAuth();
+  const [courses, setCourses] = useState<CourseItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const router = useRouter();
 
-  useEffect(() => {
-    loadCourses();
-  }, []);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDesc, setNewDesc] = useState('');
+  const [creating, setCreating] = useState(false);
 
-  const loadCourses = async () => {
+  useEffect(() => { fetchCourses(); }, []);
+
+  const fetchCourses = async () => {
     try {
-      const data = await getCourses();
-      setCourses(data);
-    } catch (e) {
-      setError('Failed to load courses');
-    }
-  };
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
-    try {
-      await createCourse({
-        title,
-        description: description || undefined,
-        instructorId: userId!,
-      });
-      setTitle('');
-      setDescription('');
-      setShowCreate(false);
-      await loadCourses();
-    } catch (e: any) {
-      setError(e.response?.data?.message || 'Failed to create course');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this course and all related data?')) return;
-    try {
-      await deleteCourse(id);
-      await loadCourses();
+      const res = await api.get('/courses');
+      setCourses(res.data);
     } catch {
-      setError('Failed to delete course');
-    }
+      setError('Failed to load courses');
+    } finally { setLoading(false); }
+  };
+
+  const handleCreate = async () => {
+    if (!newTitle.trim()) return;
+    setCreating(true);
+    try {
+      await api.post('/courses', { title: newTitle, description: newDesc });
+      setNewTitle('');
+      setNewDesc('');
+      setShowCreate(false);
+      await fetchCourses();
+    } catch {
+      setError('Failed to create course');
+    } finally { setCreating(false); }
   };
 
   return (
     <AuthGuard>
-      <div className="flex min-h-screen">
+      <div className="flex min-h-screen bg-[#0b0f1a]">
         <Sidebar />
         <main className="flex-1 p-6">
           <div className="flex items-center justify-between mb-6">
-            <h1 className="text-2xl font-bold text-gray-900">Courses</h1>
-            <button
-              onClick={() => setShowCreate(!showCreate)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-            >
-              {showCreate ? 'Cancel' : '+ New Course'}
-            </button>
+            <div>
+              <h1 className="text-2xl font-bold text-gray-100 flex items-center gap-2">
+                <BookOpen className="w-6 h-6 text-engagio-400" /> Courses
+              </h1>
+            </div>
+            {user?.role === 'TEACHER' && (
+              <button
+                onClick={() => setShowCreate(!showCreate)}
+                className="bg-engagio-600 hover:bg-engagio-700 text-white font-medium px-4 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+              >
+                <Plus className="w-4 h-4" /> New Course
+              </button>
+            )}
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
-              {error}
-            </div>
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg mb-4">{error}</div>
           )}
 
           {showCreate && (
-            <Card title="Create Course" className="mb-6">
-              <form onSubmit={handleCreate} className="space-y-4">
+            <Card className="mb-6 hover:border-engagio-500 transition-colors">
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Title</label>
                   <input
-                    type="text"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    placeholder="Course title"
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-600 bg-[#0b0f1a] text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-engagio-500 focus:border-transparent transition-colors"
+                    value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Course title"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <label className="block text-sm font-medium text-gray-300 mb-1">Description</label>
                   <textarea
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                    rows={3}
-                    placeholder="Optional description"
+                    className="w-full px-4 py-2.5 rounded-lg border border-gray-600 bg-[#0b0f1a] text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-engagio-500 focus:border-transparent transition-colors"
+                    value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Short description"
+                    rows={2}
                   />
                 </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {loading ? 'Creating...' : 'Create'}
-                </button>
-              </form>
+                <div className="flex gap-2">
+                  <button onClick={handleCreate} disabled={creating}
+                    className="px-4 py-2 bg-engagio-600 hover:bg-engagio-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                  >{creating ? 'Creating...' : 'Create'}</button>
+                  <button onClick={() => setShowCreate(false)}
+                    className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-gray-100 rounded-lg text-sm font-medium transition-colors"
+                  >Cancel</button>
+                </div>
+              </div>
             </Card>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {courses.map((course) => (
-              <Card key={course.id}>
-                <Link href={`/dashboard/courses/${course.id}`} className="block">
-                  <h3 className="font-semibold text-lg text-gray-900">{course.title}</h3>
-                  {course.description && (
-                    <p className="text-sm text-gray-500 mt-1">{course.description}</p>
-                  )}
+          {loading ? (
+            <div className="text-gray-500 py-8 text-center">Loading courses...</div>
+          ) : courses.length === 0 ? (
+            <div className="text-gray-500 py-12 text-center">No courses yet. Create your first course!</div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {courses.map((c) => (
+                <Link key={c.id} href={`/dashboard/courses/${c.id}`}>
+                  <Card className="cursor-pointer hover:border-engagio-500 transition-colors h-full">
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-lg bg-engagio-500/10 flex items-center justify-center text-engagio-400">
+                        <Layers className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-gray-100 truncate">{c.title}</h3>
+                        {c.description && <p className="text-sm text-gray-500 mt-1 line-clamp-2">{c.description}</p>}
+                        <div className="flex items-center gap-3 mt-3 text-xs text-gray-500">
+                          <span className="flex items-center gap-1">
+                            <Users className="w-3 h-3" />{c._count?.enrollments ?? 0}
+                          </span>
+                          <span>{c._count?.sessions ?? 0} sessions</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
                 </Link>
-                <div className="flex justify-between items-center mt-3 pt-3 border-t border-gray-100">
-                  <div className="text-xs text-gray-400">
-                    {course.instructor?.email || 'No instructor'}
-                  </div>
-                  <div className="flex gap-2 text-xs">
-                    <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                      {course._count?.enrollments ?? 0} enrolled
-                    </span>
-                    <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
-                      {course._count?.sessions ?? 0} sessions
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleDelete(course.id);
-                      }}
-                      className="text-red-500 hover:text-red-700 ml-1"
-                      title="Delete course"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              </Card>
-            ))}
-          </div>
-
-          {courses.length === 0 && (
-            <div className="text-center py-12 text-gray-400">
-              No courses yet. Create one to get started.
+              ))}
             </div>
           )}
         </main>

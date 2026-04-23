@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import Link from 'next/link';
+import { BookOpen, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -18,40 +19,36 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setSubmitting(true);
-
     try {
       await login(email, password);
       router.push('/dashboard');
     } catch (err: any) {
-      if (err?.response?.data?.message) {
-        setError(err.response.data.message);
-      } else if (err?.message) {
-        setError(err.message);
-      } else {
-        setError('An unexpected error occurred. Please try again.');
-      }
+      setError(err?.response?.data?.message || err?.message || 'Login failed. Please try again.');
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 px-4">
+    <div className="min-h-screen flex items-center justify-center px-4 bg-[#0b0f1a]">
       <div className="w-full max-w-md">
-        <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 space-y-6 transition-colors duration-300">
+        <div className="bg-[#151b2b] rounded-2xl border border-[#232d42] shadow-2xl p-8 space-y-6">
           {/* Header */}
           <div className="text-center">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-xl bg-engagio-500/20 text-engagio-400 mb-4">
+              <BookOpen className="w-7 h-7" />
+            </div>
+            <h1 className="text-2xl font-bold text-gray-100 tracking-tight">
               Welcome to Engagio
             </h1>
-            <p className="mt-2 text-gray-600 dark:text-gray-400">
-              Sign in to your account
+            <p className="mt-2 text-sm text-gray-400">
+              Sign in to your learning space
             </p>
           </div>
 
-          {/* Error message */}
+          {/* Error */}
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded-lg text-sm">
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg text-sm animate-fade-in">
               {error}
             </div>
           )}
@@ -59,17 +56,14 @@ export default function LoginPage() {
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label
-                htmlFor="email"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-              >
+              <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-1.5">
                 Email address
               </label>
               <input
                 id="email"
                 type="email"
                 required
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors duration-200"
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-600 bg-[#0b0f1a] text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-engagio-500 focus:border-transparent transition-colors"
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -78,17 +72,14 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label
-                htmlFor="password"
-                className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5"
-              >
+              <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-1.5">
                 Password
               </label>
               <input
                 id="password"
                 type="password"
                 required
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors duration-200"
+                className="w-full px-4 py-2.5 rounded-lg border border-gray-600 bg-[#0b0f1a] text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-engagio-500 focus:border-transparent transition-colors"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -99,20 +90,27 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-2.5 rounded-lg transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              className="w-full bg-engagio-600 hover:bg-engagio-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition-colors duration-200 flex items-center justify-center gap-2"
             >
-              {submitting ? 'Signing in...' : 'Sign In'}
+              {submitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Signing in...
+                </>
+              ) : (
+                <>
+                  Sign In
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
             </button>
           </form>
 
           {/* Footer */}
-          <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+          <p className="text-center text-sm text-gray-500">
             Don't have an account?{' '}
-            <Link
-              href="/register"
-              className="text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
-            >
-              Register
+            <Link href="/register" className="text-engagio-400 hover:text-engagio-300 font-medium transition-colors">
+              Create one
             </Link>
           </p>
         </div>

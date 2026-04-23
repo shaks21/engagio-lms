@@ -1,123 +1,108 @@
-"use client";
+'use client';
 
-import React, { useEffect, useState } from "react";
-import AuthGuard from "@/components/auth-guard";
-import Sidebar from "@/components/ui/sidebar";
-import Card from "@/components/ui/card";
-import api from "@/lib/api";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
+import React, { useEffect, useState } from 'react';
+import AuthGuard from '@/components/auth-guard';
+import Sidebar from '@/components/ui/sidebar';
+import Card from '@/components/ui/card';
+import api from '@/lib/api';
+import { Activity, Zap, Clock, Radio } from 'lucide-react';
 
-interface ClassPulseData {
-  time: string;
-  score: number;
+interface LiveEvent {
+  type: string;
+  userId: string;
+  sessionId: string;
+  createdAt: string;
 }
 
-export default function ClassPulsePage() {
+export default function PulsePage() {
+  const [events, setEvents] = useState<LiveEvent[]>([]);
+  const [stats, setStats] = useState({ activeSessions: 0, liveEvents: 0, totalUsers: 0, timestamp: '' });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sessions, setSessions] = useState<{ id: string; classroomCode: string; startedAt: string; course?: { title: string } }[]>([]);
-  const [selectedSession, setSelectedSession] = useState<string>("");
-  const [pulseData, setPulseData] = useState<ClassPulseData[]>([]);
 
-  useEffect(() => {
-    loadSessions();
-  }, []);
-
-  useEffect(() => {
-    if (selectedSession) loadPulse(selectedSession);
-  }, [selectedSession]);
-
-  const loadSessions = async () => {
+  const fetchData = async () => {
     try {
-      const { data } = await api.get('/sessions/history');
-      setSessions(data || []);
-      if (data.length > 0) setSelectedSession(data[0].id);
+      const [sRes, eRes] = await Promise.all([
+        api.get('/analytics/realtime'),
+        api.get('/analytics/events?limit=50'),
+      ]);
+      setStats(sRes.data);
+      setEvents(eRes.data || []);
     } catch {
-      setError("Failed to load sessions");
+      setError('Failed to load live pulse data');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadPulse = async (sessionId: string) => {
-    try {
-      const { data } = await api.get(`/analytics/session/${sessionId}/history`);
-      setPulseData(data.classPulse || []);
-    } catch {
-      setError("Failed to load class pulse");
-    }
-  };
+  useEffect(() => {
+    fetchData();
+    const interval = setInterval(fetchData, 10000);
+    return () => clearInterval(interval);
+  }, []);
 
-  if (loading) return <div className="p-8 text-gray-500">Loading...</div>;
+  const getEventIcon = (type: string) => {
+    if (type.includes('MOUSE')) return <Zap className="w-4 h-4 text-engagio-400" />;
+    if (type.includes('KEY')) return <Zap className="w-4 h-4 text-yellow-400" />;
+    return <Activity className="w-4 h-4 text-green-400" />;
+  };
 
   return (
     <AuthGuard>
-      <div className="flex min-h-screen bg-gray-50">
+      <div className="flex min-h-screen bg-[#0b0f1a]">
         <Sidebar />
-        <main className="flex-1 p-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-6">Class Pulse</h1>
+        <main className="flex-1 p-6">
+          <h1 className="text-2xl font-bold text-gray-100 mb-6 flex items-center gap-2">
+            <Activity className="w-6 h-6 text-engagio-400" /> Live Pulse
+          </h1>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-4 py-3 rounded-lg mb-4">
               {error}
             </div>
           )}
 
-          {/* Session selector */}
-          <Card className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Select Session
-            </label>
-            <select
-              value={selectedSession}
-              onChange={(e) => setSelectedSession(e.target.value)}
-              className="w-full max-w-md px-3 py-2 border border-gray-300 rounded-lg"
-            >
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.course?.title || "Session"} — Code: {s.classroomCode} — {new Date(s.startedAt).toLocaleString()}
-                </option>
-              ))}
-            </select>
-          </Card>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <Card className="text-center">
+              <div className="text-3xl font-bold text-engagio-400">{stats.activeSessions}</div>
+              <div className="text-sm text-gray-500 mt-1">Active Sessions</div>
+            </Card>
+            <Card className="text-center">
+              <div className="text-3xl font-bold text-green-400">{events.length}</div>
+              <div className="text-sm text-gray-500 mt-1">Recent Events</div>
+            </Card>
+            <Card className="text-center">
+              <div className="text-3xl font-bold text-purple-400">{stats.totalUsers}</div>
+              <div className="text-sm text-gray-500 mt-1">Total Users</div>
+            </Card>
+          </div>
 
-          {/* Chart */}
-          <Card title="Class Engagement Over Time">
-            {pulseData.length === 0 ? (
-              <p className="text-gray-400 py-12 text-center text-center">
-                No engagement data yet. Start a classroom session and wait 60s for the first snapshot.
-              </p>
+          <Card title="Recent Events">
+            {loading ? (
+              <div className="text-gray-500 py-8 text-center flex items-center justify-center gap-2">
+                <Clock className="w-4 h-4 animate-spin" /> Loading events...
+              </div>
+            ) : events.length === 0 ? (
+              <div className="text-gray-500 py-8 text-center">No recent events</div>
             ) : (
-              <ResponsiveContainer width="100%" height={350}>
-                <LineChart data={pulseData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="time"
-                    tickFormatter={(v) => new Date(v).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    stroke="#9ca3af"
-                  />
-                  <YAxis domain={[0, 100]} stroke="#9ca3af" />
-                  <Tooltip
-                    labelFormatter={(v) => new Date(v).toLocaleTimeString()}
-                    formatter={(value) => [`Score: ${value}`, "Engagement"]}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="score"
-                    stroke="#3b82f6"
-                    strokeWidth={3}
-                    dot={{ fill: "#3b82f6", strokeWidth: 2 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <div className="space-y-2 max-h-[60vh] overflow-y-auto scrollbar-hide pr-2">
+                {events.map((e, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-[#0b0f1a] border border-[#232d42]"
+                  >
+                    {getEventIcon(e.type)}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium text-gray-200">{e.type}</div>
+                      <div className="text-xs text-gray-500 flex items-center gap-2">
+                        <span>User: {e.userId?.slice(0,8) || 'N/A'}...</span>
+                        <span className="font-mono text-gray-600">{e.sessionId?.slice(0,8)}...</span>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600">{new Date(e.createdAt).toLocaleTimeString()}</div>
+                  </div>
+                ))}
+              </div>
             )}
           </Card>
         </main>

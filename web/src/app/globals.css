@@ -1,35 +1,37 @@
 @import "tailwindcss";
 
+/* ========== Dark-first defaults ========== */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-  --surface: #ffffff;
-  --surface-hover: #f9fafb;
-  --border: #e5e7eb;
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
+  --background: #0b0f1a;
+  --foreground: #f1f5f9;
+  --surface: #151b2b;
+  --surface-hover: #1e293b;
+  --border: #232d42;
+  --primary: #0ea5e9;
+  --primary-hover: #0284c7;
   --primary-text: #ffffff;
   --secondary: #7c3aed;
   --danger: #ef4444;
   --danger-hover: #dc2626;
   --success: #22c55e;
   --warning: #f59e0b;
-  --text-muted: #6b7280;
-  --sidebar-bg: #1e1b4b;
-  --sidebar-hover: #312e81;
-  --sidebar-text: #e0e7ff;
-  --sidebar-active: #4338ca;
-}
-
-.dark {
-  --background: #0f172a;
-  --foreground: #f8fafc;
-  --surface: #1e293b;
-  --surface-hover: #334155;
-  --border: #334155;
   --text-muted: #94a3b8;
   --sidebar-bg: #0f0f23;
   --sidebar-hover: #1a1a3e;
+  --sidebar-text: #e0e7ff;
+  --sidebar-active: #0ea5e9;
+}
+
+/* Optional light mode override */
+.light {
+  --background: #ffffff;
+  --foreground: #171717;
+  --surface: #ffffff;
+  --surface-hover: #f9fafb;
+  --border: #e5e7eb;
+  --text-muted: #6b7280;
+  --sidebar-bg: #1e1b4b;
+  --sidebar-hover: #312e81;
 }
 
 @theme inline {
@@ -38,7 +40,7 @@
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  /* ========== Classroom Edu Palette ========== */
+  /* Classroom palette */
   --color-edu-slate: #1e293b;
   --color-edu-dark: #0f172a;
   --color-edu-accent: #f59e0b;
@@ -46,7 +48,7 @@
   --color-edu-success: #22c55e;
   --color-edu-warning: #eab308;
 
-  /* Engagio scale */
+  /* Engagio accent scale */
   --color-engagio-50: #f0f9ff;
   --color-engagio-100: #e0f2fe;
   --color-engagio-200: #bae6fd;
@@ -60,7 +62,7 @@
   --color-engagio-950: #082f49;
 }
 
-/* Base styles */
+/* Base body */
 body {
   background: var(--background);
   color: var(--foreground);
@@ -75,18 +77,18 @@ body {
   transition-timing-function: ease;
 }
 
-/* Buttons */
+/* ========== Buttons ========== */
 .btn {
   @apply inline-flex items-center justify-center px-4 py-2 font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer;
   transition: all 0.2s ease;
 }
 
 .btn-primary {
-  @apply bg-indigo-600 text-white hover:bg-indigo-700 focus:ring-indigo-500;
+  @apply bg-engagio-600 text-white hover:bg-engagio-700 focus:ring-engagio-500;
 }
 
 .btn-secondary {
-  @apply bg-gray-200 dark:bg-gray-700 text-gray-900 dark:text-white hover:bg-gray-300 dark:hover:bg-gray-600 focus:ring-gray-400;
+  @apply bg-gray-700 text-gray-100 hover:bg-gray-600 focus:ring-gray-400;
 }
 
 .btn-danger {
@@ -101,23 +103,28 @@ body {
   @apply px-6 py-3 text-lg;
 }
 
-/* Cards */
-.card {
-  @apply bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm transition-colors;
+/* ========== Cards ========== */
+.app-card {
+  @apply rounded-xl border border-[#232d42] shadow-sm transition-colors;
+  background: #151b2b;
 }
 
-.card-hover {
-  @apply hover:shadow-md hover:border-gray-300 dark:hover:border-gray-600;
+.app-card-hover {
+  @apply hover:shadow-md hover:border-gray-600;
 }
 
-/* Sidebar */
+/* ========== Sidebar ========== */
 .sidebar {
-  @apply w-64 bg-indigo-950 dark:bg-zinc-950 text-indigo-100 flex flex-col min-h-screen;
+  width: 16rem;
+  background: var(--sidebar-bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
   transition: width 0.3s ease;
 }
 
 .sidebar-header {
-  @apply px-6 py-5 border-b border-indigo-800 dark:border-zinc-800;
+  @apply px-6 py-5 border-b border-gray-700;
 }
 
 .sidebar-nav {
@@ -125,27 +132,27 @@ body {
 }
 
 .sidebar-link {
-  @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-indigo-200 hover:bg-indigo-800/50 hover:text-white transition-colors cursor-pointer;
+  @apply flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-300 hover:bg-gray-800/60 hover:text-white transition-colors cursor-pointer;
 }
 
 .sidebar-link-active {
-  @apply bg-indigo-700 text-white;
+  @apply bg-gray-800 text-white border-l-2 border-engagio-500;
 }
 
 .sidebar-link-disabled {
   @apply opacity-50 pointer-events-none;
 }
 
-/* Forms */
-.input {
-  @apply w-full px-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-colors;
+/* ========== Forms ========== */
+.app-input {
+  @apply w-full px-4 py-2.5 rounded-lg border border-gray-600 bg-gray-800 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-engagio-500 focus:border-transparent transition-colors;
 }
 
-.label {
-  @apply block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5;
+.app-label {
+  @apply block text-sm font-medium text-gray-300 mb-1.5;
 }
 
-/* Page layout */
+/* ========== Page Layout ========== */
 .page-container {
   @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8;
 }
@@ -155,51 +162,45 @@ body {
 }
 
 .page-title {
-  @apply text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white;
+  @apply text-2xl sm:text-3xl font-bold text-white;
 }
 
 .page-subtitle {
-  @apply mt-2 text-gray-600 dark:text-gray-400;
+  @apply mt-2 text-gray-400;
 }
 
-/* Badge */
+/* ========== Badges ========== */
 .badge {
   @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
 }
 
 .badge-primary {
-  @apply bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300;
+  @apply bg-engagio-900/30 text-engagio-400;
 }
 
 .badge-success {
-  @apply bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300;
+  @apply bg-green-900/30 text-green-400;
 }
 
 .badge-warning {
-  @apply bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300;
+  @apply bg-yellow-900/30 text-yellow-400;
 }
 
 .badge-danger {
-  @apply bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300;
+  @apply bg-red-900/30 text-red-400;
 }
 
-/* Animations */
+/* ========== Animations ========== */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fade-in {
   animation: fadeIn 0.3s ease-out;
 }
 
-/* Scrollbar */
+/* ========== Scrollbars ========== */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -210,33 +211,28 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #a1a1aa;
+  background: #2d3748;
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #71717a;
+  background: #4a5568;
 }
 
-.dark ::-webkit-scrollbar-thumb {
-  background: #4b5563;
-}
-
-.dark ::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
-}
-
-/* ========== Classroom Utility Classes ========== */
-
-/* Glass Panel (header, controls, toasts) */
+/* ========== Glass Panel (Classroom) ========== */
 .glass-panel {
   background: rgba(15, 23, 42, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Video Tile hover + speaking ring */
+.glass-panel-hover:hover {
+  background: rgba(15, 23, 42, 0.92);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ========== Classroom Video Tile ========== */
 .video-tile {
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
@@ -250,7 +246,6 @@ body {
   box-shadow: 0 0 0 2px #22c55e, 0 0 20px rgba(34, 197, 94, 0.3);
 }
 
-/* Control Button */
 .control-btn {
   transition: all 0.2s ease;
 }
@@ -264,7 +259,7 @@ body {
   color: white;
 }
 
-/* Hide scrollbar (filmstrip, panels) */
+/* Hidden scrollbar */
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
@@ -274,28 +269,21 @@ body {
   scrollbar-width: none;
 }
 
-/* Audio visualizer bars */
+/* Audio bars */
 .audio-bar {
   transition: height 0.1s ease;
 }
 
-/* Toast slide-in */
+/* Toast animation */
 @keyframes toast-slide-in {
-  0% {
-    opacity: 0;
-    transform: translateX(100%);
-  }
-  100% {
-    opacity: 1;
-    transform: translateX(0);
-  }
+  0%   { opacity: 0; transform: translateX(100%); }
+  100% { opacity: 1; transform: translateX(0); }
 }
 
 .animate-toast-in {
   animation: toast-slide-in 0.3s ease-out forwards;
 }
 
-/* Toast fade-out */
 .animate-toast-out {
   opacity: 0;
   transform: translateX(100%);
@@ -304,9 +292,7 @@ body {
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
@@ -323,4 +309,17 @@ body {
 
 .high-contrast .speaking-ring {
   box-shadow: 0 0 0 4px #ffff00, 0 0 0 6px #000;
+}
+
+/* ========== Dark table utilities ========== */
+.app-table thead th {
+  @apply text-gray-400 text-xs uppercase font-semibold tracking-wider py-3 px-4 border-b border-gray-700;
+}
+
+.app-table tbody td {
+  @apply py-3 px-4 border-b border-gray-800 text-gray-200;
+}
+
+.app-table tbody tr:hover {
+  @apply bg-gray-800/40;
 }

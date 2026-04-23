@@ -11,12 +11,12 @@ interface CardProps {
 
 export default function Card({ title, badge, children, className = '' }: CardProps) {
   return (
-    <div className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden ${className}`}>
+    <div className={`bg-[#151b2b] rounded-xl border border-[#232d42] shadow-sm overflow-hidden transition-colors hover:border-gray-600 ${className}`}>
       {title && (
-        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-          <h3 className="font-semibold text-gray-800">{title}</h3>
+        <div className="px-4 py-3 border-b border-[#232d42] bg-[#151b2b]/80 flex items-center justify-between">
+          <h3 className="font-semibold text-gray-100">{title}</h3>
           {badge && (
-            <span className="bg-blue-100 text-blue-700 text-xs font-medium px-2 py-1 rounded-full">
+            <span className="bg-engagio-900/30 text-engagio-400 text-xs font-medium px-2 py-1 rounded-full">
               {badge}
             </span>
           )}
