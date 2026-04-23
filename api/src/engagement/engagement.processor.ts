@@ -55,37 +55,44 @@ export class EngagementProcessor implements OnModuleInit, OnModuleDestroy {
 
   private async startConsumer() {
     await this.consumer.connect();
-    await this.consumer.subscribe({ topic: "classroom-events", fromBeginning: true });
+    await this.consumer.subscribe({ topic: "classroom-events", fromBeginning: false });
 
     await this.consumer.run({
       eachMessage: async ({ topic, partition, message }) => {
         if (!message.value) return;
 
-        const event = JSON.parse(message.value.toString()) as ClassroomEventPayload;
+        try {
+          const event = JSON.parse(message.value.toString()) as ClassroomEventPayload;
 
-        this.logger.log(
-          `[${topic}/${message.offset}] ${event.type} tenant=${event.tenantId} session=${event.sessionId}`,
-        );
-
-        // GUARD: Skip events with null tenantId to prevent Prisma validation errors
-        if (!event.tenantId || !event.sessionId) {
-          this.logger.warn(
-            `[${topic}/${message.offset}] Skipping event with missing tenantId or sessionId: ${JSON.stringify(event)}`,
+          this.logger.log(
+            `[${topic}/${message.offset}] ${event.type} tenant=${event.tenantId} session=${event.sessionId}`,
           );
-          return;
-        }
 
-        await this.prisma.engagementEvent.create({
-          data: {
-            tenantId: event.tenantId,
-            sessionId: event.sessionId,
-            type: event.type as any,
-            payload: event.payload as any,
-          },
-        });
+          // GUARD: Skip events with null tenantId to prevent Prisma validation errors
+          if (!event.tenantId || !event.sessionId) {
+            this.logger.warn(
+              `[${topic}/${message.offset}] Skipping event with missing tenantId or sessionId`,
+            );
+            return;
+          }
+
+          // Wrap Prisma write in try/catch so Kafka consumer doesn't crash on FK violations
+          await this.prisma.engagementEvent.create({
+            data: {
+              tenantId: event.tenantId,
+              sessionId: event.sessionId,
+              type: event.type as any,
+              payload: event.payload as any,
+            },
+          });
+        } catch (err: any) {
+          this.logger.error(
+            `[${topic}/${message.offset}] Failed to process event: ${err?.message || err}`,
+          );
+          // Do NOT rethrow — swallow the error so KafkaJS doesn't crash and retry
+        }
       },
     });
-
     this.logger.log("Kafka consumer running on classroom-events");
   }
 

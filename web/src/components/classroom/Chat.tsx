@@ -17,15 +17,19 @@ interface ChatProps {
   userName: string;
   socket: Socket | null;
   sessionId: string;
+  embedded?: boolean;
 }
 
-export default function Chat({ userId, userName, socket, sessionId }: ChatProps) {
+export default function Chat({ userId, userName, socket, sessionId, embedded }: ChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Always open when embedded
+  const isChatOpen = embedded ? true : isOpen;
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -34,12 +38,11 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
 
   // Focus input when chat opens
   useEffect(() => {
-    if (isOpen && inputRef.current) {
+    if (isChatOpen && inputRef.current) {
       inputRef.current.focus();
     }
-    // Mark as read when chat is opened
     setUnreadCount(0);
-  }, [isOpen]);
+  }, [isChatOpen]);
 
   // Listen for chat messages from the server
   useEffect(() => {
@@ -53,7 +56,6 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
       timestamp: string;
     }) => {
       const isOwn = data.userId === userId;
-      // Skip own messages if already added optimistically
       if (isOwn) return;
 
       const msg: Message = {
@@ -66,7 +68,7 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
       };
 
       setMessages((prev) => [...prev, msg]);
-      if (!isOpen) {
+      if (!isChatOpen) {
         setUnreadCount((prev) => prev + 1);
       }
     };
@@ -75,16 +77,14 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
     return () => {
       socket.off('chat-message', onChatMessage);
     };
-  }, [socket, isOpen, userId]);
+  }, [socket, isChatOpen, userId]);
 
   const handleSend = () => {
-    if (!input.trim()) return;
-    if (!socket) return;
+    if (!input.trim() || !socket) return;
 
     const text = input.trim();
     const msgId = Date.now().toString();
 
-    // Optimistically show own message
     const ownMsg: Message = {
       id: msgId,
       userId,
@@ -95,7 +95,6 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
     };
     setMessages((prev) => [...prev, ownMsg]);
 
-    // Broadcast to server
     socket.emit('engagementEvent', {
       type: 'CHAT',
       payload: { text, sessionId },
@@ -111,14 +110,15 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
     }
   };
 
-  if (!isOpen) {
+  // If not embedded and not open, show floating button
+  if (!embedded && !isOpen) {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-4 left-4 w-20 h-20 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg hover:bg-blue-700 transition-colors z-50"
+        className="fixed bottom-4 left-4 w-14 h-14 rounded-full bg-blue-600 text-white flex items-center justify-center shadow-lg hover:bg-blue-700 transition-colors z-50"
         title="Open Chat"
       >
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
         {unreadCount > 0 && (
@@ -130,41 +130,42 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
     );
   }
 
+  // Container class based on mode
+  const containerClass = embedded
+    ? 'flex flex-col h-full'
+    : 'fixed bottom-4 left-4 w-80 h-96 bg-gray-800 border border-gray-700 rounded-xl shadow-2xl p-3 flex flex-col overflow-hidden z-50';
+
   return (
-    <div className="fixed inset-0 w-full h-full bg-gray-800/90 backdrop-blur-sm flex flex-col overflow-hidden z-50 lg:bottom-4 lg:left-4 lg:w-80 lg:h-96 lg:top-auto lg:right-auto lg:bg-gray-800 lg:border lg:border-gray-700 lg:rounded-xl lg:shadow-2xl lg:p-3">
+    <div className={containerClass}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white">
+      <div className={`flex items-center justify-between px-2 py-2 ${ embedded ? 'px-2 py-1' : 'bg-gradient-to-r from-blue-600 to-purple-600 text-white px-3 py-2 rounded-t-lg -mx-3 -mt-3 mb-2'}`}>
         <div>
-          <h3 className="font-semibold text-sm">Classroom Chat</h3>
-          {unreadCount > 0 && (
-            <span className="text-xs opacity-80">{unreadCount} unread</span>
-          )}
+          <h3 className={`font-semibold text-sm ${ embedded ? 'text-gray-300' : 'text-white'}`}>Classroom Chat</h3>
         </div>
-        <button
-          onClick={() => setIsOpen(false)}
-          className="p-1 hover:bg-white/20 rounded-lg transition-colors"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
+        {!embedded && (
+          <button
+            onClick={() => setIsOpen(false)}
+            className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3 space-y-2">
+      <div className="flex-1 overflow-y-auto p-1 space-y-2">
         {messages.length === 0 ? (
-          <div className="text-center text-gray-400 text-sm py-8">
+          <div className="text-center text-gray-400 text-sm py-6">
             No messages yet. Start the conversation!
           </div>
         ) : (
           messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex flex-col ${msg.isOwn ? 'items-end' : 'items-start'}`}
-            >
+            <div key={msg.id} className={`flex flex-col ${msg.isOwn ? 'items-end' : 'items-start'}`}>
               <div
-                className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
+                className={`max-w-[85%] rounded-lg px-3 py-1.5 text-sm ${
                   msg.isOwn
                     ? 'bg-blue-600 text-white rounded-br-none'
                     : 'bg-gray-700 text-gray-100 rounded-bl-none'
@@ -176,10 +177,7 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
                 {msg.text}
               </div>
               <span className="text-[10px] text-gray-500 mt-0.5 px-1">
-                {msg.timestamp.toLocaleTimeString([], {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                })}
+                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
           ))
@@ -188,7 +186,7 @@ export default function Chat({ userId, userName, socket, sessionId }: ChatProps)
       </div>
 
       {/* Input */}
-      <div className="border-t border-gray-700 p-2">
+      <div className={`${ embedded ? 'border-t border-gray-700 pt-1' : 'border-t border-gray-700 pt-2 -mx-3 -mb-3 px-3 pb-3'}`}>
         <div className="flex gap-2">
           <input
             ref={inputRef}

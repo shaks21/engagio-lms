@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import AuthGuard from "@/components/auth-guard";
 import Sidebar from "@/components/ui/sidebar";
 import Card from "@/components/ui/card";
+import api from "@/lib/api";
 import {
   LineChart,
   Line,
@@ -36,12 +37,9 @@ export default function ClassPulsePage() {
 
   const loadSessions = async () => {
     try {
-      const res = await fetch("/api/sessions/history");
-      if (res.ok) {
-        const data = await res.json();
-        setSessions(data);
-        if (data.length > 0) setSelectedSession(data[0].id);
-      }
+      const { data } = await api.get('/sessions/history');
+      setSessions(data || []);
+      if (data.length > 0) setSelectedSession(data[0].id);
     } catch {
       setError("Failed to load sessions");
     } finally {
@@ -51,11 +49,8 @@ export default function ClassPulsePage() {
 
   const loadPulse = async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/analytics/session/${sessionId}/history`);
-      if (res.ok) {
-        const data = await res.json();
-        setPulseData(data.classPulse || []);
-      }
+      const { data } = await api.get(`/analytics/session/${sessionId}/history`);
+      setPulseData(data.classPulse || []);
     } catch {
       setError("Failed to load class pulse");
     }

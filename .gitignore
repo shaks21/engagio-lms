@@ -5,3 +5,5 @@ dist/
 docker/data/
 api/prisma/dev.db
 .next/
+test-results/
+*.webm

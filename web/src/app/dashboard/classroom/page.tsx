@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import AuthGuard from '@/components/auth-guard';
 import Sidebar from '@/components/ui/sidebar';
 import Card from '@/components/ui/card';
-import { getCourses, getActiveSessions, startSession, type Session } from '@/lib/api';
+import { getCourses, getActiveSessions, startSession, getSessionByCode, type Session } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 
 export default function ClassroomDashboard() {
@@ -52,9 +52,7 @@ export default function ClassroomDashboard() {
     setError(null);
     setLoading(true);
     try {
-      const res = await fetch(`/api/sessions/code/${joinCode.trim()}`);
-      if (!res.ok) throw new Error('Invalid code');
-      const data = await res.json();
+      const data = await getSessionByCode(joinCode.trim());
       router.push(`/classroom/${data.id}`);
     } catch {
       setError('Session not found. Check the code and try again.');

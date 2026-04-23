@@ -2,7 +2,7 @@ import { Controller, Get, Param, Query, UnauthorizedException, Logger } from '@n
 import { LivekitService } from './livekit.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-@Controller('api/classroom')
+@Controller('classroom')
 export class LivekitController {
   private readonly logger = new Logger(LivekitController.name);
 

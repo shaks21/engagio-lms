@@ -151,7 +151,7 @@ export default function Toolbar({
           {/* Microphone */}
           <button
             onClick={() => onToggleMic(!micActive)}
-            className={`p-3 rounded-lg transition-colors ${
+            className={`p-3 rounded-lg transition-colors flex items-center gap-2 ${
               micActive
                 ? 'bg-green-600 hover:bg-green-700'
                 : 'bg-red-600 hover:bg-red-700'
@@ -160,12 +160,13 @@ export default function Toolbar({
             aria-label={micActive ? 'Mute microphone' : 'Unmute microphone'}
           >
             <MicrophoneIcon active={micActive} />
+            <span className="text-sm">{micActive ? 'Mic On' : 'Mic Off'}</span>
           </button>
 
           {/* Camera */}
           <button
             onClick={() => onToggleCamera(!cameraActive)}
-            className={`p-3 rounded-lg transition-colors ${
+            className={`p-3 rounded-lg transition-colors flex items-center gap-2 ${
               cameraActive
                 ? 'bg-green-600 hover:bg-green-700'
                 : 'bg-red-600 hover:bg-red-700'
@@ -174,6 +175,7 @@ export default function Toolbar({
             aria-label={cameraActive ? 'Turn off camera' : 'Turn on camera'}
           >
             <CameraIcon active={cameraActive} />
+            <span className="text-sm">{cameraActive ? 'Cam On' : 'Cam Off'}</span>
           </button>
 
           {/* Screen Share */}

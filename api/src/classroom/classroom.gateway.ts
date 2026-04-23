@@ -391,7 +391,8 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
         userId,
         clientId: client.id,
         userName: userName || userId?.slice(0, 8) || "User",
-        text: (data.payload as { message?: string })?.message || "",
+        text: (data.payload as { text?: string; message?: string })?.text ||
+            (data.payload as { text?: string; message?: string })?.message || "",
         timestamp: new Date().toISOString(),
       });
     } else if (data.type === "MOUSE_TRACK") {
