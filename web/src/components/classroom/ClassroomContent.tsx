@@ -12,6 +12,7 @@ import FocusLayout from './FocusLayout';
 import Sidebar, { type SidebarTab } from './Sidebar';
 import Toolbar from './Toolbar';
 import ToastContainer, { type Toast } from './ToastContainer';
+import PreJoin from './PreJoin';
 
 /* ───────────────── types ───────────────── */
 
@@ -19,6 +20,33 @@ interface TokenPayload {
   token: string;
   livekitUrl: string;
   roomName: string;
+}
+
+/* ───────────────── sync hook ───────────────── */
+
+function useSyncMediaState(room: InstanceType<typeof import('livekit-client').Room>) {
+  const [micMuted, setMicMuted] = useState(!room.localParticipant.isMicrophoneEnabled);
+  const [cameraOff, setCameraOff] = useState(!room.localParticipant.isCameraEnabled);
+
+  useEffect(() => {
+    const lp = room.localParticipant;
+    const onMuted = () => {
+      setMicMuted(!lp.isMicrophoneEnabled);
+      setCameraOff(!lp.isCameraEnabled);
+    };
+    const onUnmuted = () => {
+      setMicMuted(!lp.isMicrophoneEnabled);
+      setCameraOff(!lp.isCameraEnabled);
+    };
+    room.on('trackMuted', onMuted);
+    room.on('trackUnmuted', onUnmuted);
+    return () => {
+      room.off('trackMuted', onMuted);
+      room.off('trackUnmuted', onUnmuted);
+    };
+  }, [room]);
+
+  return { micMuted, cameraOff, setMicMuted, setCameraOff };
 }
 
 interface ClassroomContentProps {
@@ -92,15 +120,16 @@ function InnerRoomUI({
   const router = useRouter();
   const { user, userId, userName } = useAuth();
 
+  // Sync media state from LiveKit
+  const { micMuted, cameraOff, setMicMuted, setCameraOff } = useSyncMediaState(room);
+
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('focus');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chat');
   const [pinnedSid, setPinnedSid] = useState<string | undefined>(undefined);
 
-  // Media state
-  const [micMuted, setMicMuted] = useState(false);
-  const [cameraOff, setCameraOff] = useState(true);
+  // Other media state
   const [handRaised, setHandRaised] = useState(false);
   const [screenShareActive, setScreenShareActive] = useState(false);
 
@@ -279,6 +308,9 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // PreJoin: user's mic/camera preference before entering
+  const [preJoinConfig, setPreJoinConfig] = useState<import('./PreJoin').PreJoinConfig | null>(null);
+
   const { socket } = useClassroomSocket(sessionId, userId, tenantId as string);
 
   const onConnected = useCallback(() => {
@@ -403,6 +435,17 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
     );
   }
 
+  /* ── Pre-join ── */
+  if (!preJoinConfig) {
+    return (
+      <PreJoin
+        roomName={sessionId}
+        userName={userName || 'User'}
+        onJoin={(config) => setPreJoinConfig(config)}
+      />
+    );
+  }
+
   /* ── Live classroom ── */
   return (
     <div className="h-screen w-screen bg-edu-dark flex flex-col overflow-hidden">
@@ -410,8 +453,8 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
         serverUrl={serverUrl}
         token={token}
         connect={true}
-        video={true}
-        audio={true}
+        video={preJoinConfig.cameraEnabled}
+        audio={preJoinConfig.micEnabled}
         options={{ adaptiveStream: true, dynacast: true }}
         onConnected={onConnected}
         onDisconnected={onDisconnected}

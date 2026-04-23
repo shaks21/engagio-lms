@@ -14,6 +14,10 @@ interface GlassHeaderProps {
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
   onLeave: () => void;
+  /** Whether to show the recording indicator */
+  showRecording?: boolean;
+  /** Whether the session is currently being recorded */
+  isRecording?: boolean;
 }
 
 export default function GlassHeader({
@@ -24,6 +28,8 @@ export default function GlassHeader({
   viewMode,
   onViewModeChange,
   onLeave,
+  showRecording = false,
+  isRecording = false,
 }: GlassHeaderProps) {
   return (
     <header className="fixed top-0 left-0 right-0 h-14 glass-panel z-50 flex items-center justify-between px-4 lg:px-6">
@@ -89,10 +95,12 @@ export default function GlassHeader({
       <div className="flex items-center gap-2">
         <div className="h-6 w-px bg-gray-700 hidden sm:block" />
 
-        <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-xs font-medium border border-red-500/20 animate-pulse">
-          <Circle className="w-2 h-2 fill-current" />
-          <span className="hidden sm:inline">REC</span>
-        </button>
+        {showRecording && isRecording && (
+          <button className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-400 text-xs font-medium border border-red-500/20 animate-pulse">
+            <Circle className="w-2 h-2 fill-current" />
+            <span className="hidden sm:inline">REC</span>
+          </button>
+        )}
 
         <button
           onClick={onLeave}
