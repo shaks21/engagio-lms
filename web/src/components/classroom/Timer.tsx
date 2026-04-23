@@ -32,11 +32,11 @@ export default function Timer({ startTime, className = '' }: TimerProps) {
   }, []); // Empty deps - only run once
 
   return (
-    <div className={`font-mono text-sm flex items-center gap-2 ${className}`}>
+    <div className={`font-mono text-sm flex items-center gap-2 text-white ${className}`}>
       <span className="text-red-500 text-xs animate-pulse">●</span>
-      <span className="text-gray-700">LIVE</span>
+      <span className="text-gray-300">LIVE</span>
       <span className="text-gray-500">|</span>
-      <span className="text-gray-800 font-semibold">
+      <span className="text-white font-semibold">
         {formatDuration(elapsed)}
       </span>
     </div>
