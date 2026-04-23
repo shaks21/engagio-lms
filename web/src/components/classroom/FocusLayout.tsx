@@ -47,11 +47,17 @@ function SafeParticipantTile({
   const videoRef = React.useRef<HTMLVideoElement>(null);
 
   const videoPub = participant.getTrackPublication(trackSource);
+  // FIX: local tracks are not "subscribed" — use isEnabled for local
   const isVideoOn =
-    !!videoPub && videoPub.isSubscribed && !videoPub.isMuted && !!videoPub.track;
+    !!videoPub &&
+    (participant.isLocal ? videoPub.isEnabled : videoPub.isSubscribed) &&
+    !videoPub.isMuted &&
+    !!videoPub.track;
   const micPub = participant.getTrackPublication(Track.Source.Microphone);
   const isMicOn =
-    !!micPub && micPub.isSubscribed && !micPub.isMuted;
+    !!micPub &&
+    (participant.isLocal ? micPub.isEnabled : micPub.isSubscribed) &&
+    !micPub.isMuted;
 
   React.useEffect(() => {
     const videoEl = videoRef.current;
@@ -155,6 +161,17 @@ function MainVideo({
 }
 
 /* ─── Draggable self-camera PiP ─── */
+
+interface DraggablePiPState {
+  minimized: boolean;
+  offset: { x: number; y: number };
+  dragging: boolean;
+}
+
+function dragReducer(state: DraggablePiPState, action: Partial<DraggablePiPState>): DraggablePiPState {
+  return { ...state, ...action };
+}
+
 function DraggableSelfPiP({
   participant,
   onClickPinSelf,
@@ -162,9 +179,13 @@ function DraggableSelfPiP({
   participant: Participant;
   onClickPinSelf: () => void;
 }) {
-  const [minimized, setMinimized] = React.useState(false);
-  const [offset, setOffset] = React.useState({ x: 0, y: 0 });
-  const [dragging, setDragging] = React.useState(false);
+  const [state, dispatch] = React.useReducer(dragReducer, {
+    minimized: false,
+    offset: { x: 0, y: 0 },
+    dragging: false,
+  });
+  const { minimized, offset, dragging } = state;
+
   const dragData = React.useRef({
     startX: 0,
     startY: 0,
@@ -172,7 +193,6 @@ function DraggableSelfPiP({
     initialY: 0,
   });
   const containerRef = React.useRef<HTMLDivElement>(null);
-  const hasDragged = React.useRef(false);
 
   /* Window-level drag listeners */
   React.useEffect(() => {
@@ -181,10 +201,6 @@ function DraggableSelfPiP({
     const handleMove = (e: MouseEvent) => {
       const dx = e.clientX - dragData.current.startX;
       const dy = e.clientY - dragData.current.startY;
-
-      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-        hasDragged.current = true;
-      }
 
       const el = containerRef.current;
       const parent = el?.offsetParent as HTMLElement | null;
@@ -199,14 +215,11 @@ function DraggableSelfPiP({
       newX = Math.max(-el.offsetLeft, Math.min(newX, maxX - el.offsetLeft));
       newY = Math.max(-el.offsetTop, Math.min(newY, maxY - el.offsetTop));
 
-      setOffset({ x: newX, y: newY });
-    };
-
-    const handleUp = () => {
-      setDragging(false);
+      dispatch({ offset: { x: newX, y: newY } });
     };
 
     window.addEventListener('mousemove', handleMove);
+    const handleUp = () => dispatch({ dragging: false });
     window.addEventListener('mouseup', handleUp);
     return () => {
       window.removeEventListener('mousemove', handleMove);
@@ -219,23 +232,19 @@ function DraggableSelfPiP({
     const target = e.target as HTMLElement;
     if (target.closest('button')) return;
 
-    hasDragged.current = false;
     dragData.current = {
       startX: e.clientX,
       startY: e.clientY,
       initialX: offset.x,
       initialY: offset.y,
     };
-    setDragging(true);
+    dispatch({ dragging: true });
   };
 
-  const handleClick = (e: React.MouseEvent) => {
-    if (hasDragged.current) {
-      e.stopPropagation();
-      return;
-    }
+  const handleClick = () => {
+    if (dragging) return;
     if (minimized) {
-      setMinimized(false);
+      dispatch({ minimized: false });
     } else {
       onClickPinSelf();
     }
@@ -256,7 +265,10 @@ function DraggableSelfPiP({
         onMouseDown={handleMouseDown}
         onClick={handleClick}
         style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
-        className="absolute bottom-20 right-4 z-30 rounded-full bg-engagio-600 text-white font-bold text-sm shadow-lg ring-2 ring-white/20 hover:ring-white/40 cursor-pointer select-none flex items-center justify-center w-12 h-12"
+        className="absolute bottom-32 sm:bottom-20 right-3 sm:right-4 z-30 rounded-full
+                   bg-engagio-600 text-white font-bold text-sm shadow-lg
+                   ring-2 ring-white/20 hover:ring-white/40 cursor-pointer
+                   select-none flex items-center justify-center w-12 h-12"
         title="Click to restore"
       >
         {initials}
@@ -270,18 +282,17 @@ function DraggableSelfPiP({
       onMouseDown={handleMouseDown}
       onClick={handleClick}
       style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
-      className={`absolute bottom-20 right-4 w-56 sm:w-64 h-40 sm:h-44 rounded-xl overflow-hidden shadow-2xl z-30 ring-1 ring-gray-700 bg-gray-900 select-none ${
-        dragging ? 'cursor-grabbing' : 'cursor-grab'
-      }`}
+      className={`absolute bottom-32 sm:bottom-20 right-3 sm:right-4 w-48 h-32 sm:w-56 sm:h-40
+                   rounded-xl overflow-hidden shadow-2xl z-30 ring-1 ring-gray-700 bg-gray-900
+                   select-none ${dragging ? 'cursor-grabbing' : 'cursor-grab'}`}
     >
       <SafeParticipantTile participant={participant} />
 
       {/* Minimize button */}
       <button
-        onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
           e.stopPropagation();
-          setMinimized(true);
+          dispatch({ minimized: true });
         }}
         className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-md text-white transition-colors"
         title="Minimize"
