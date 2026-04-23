@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { LiveKitRoom, useRoomContext } from '@livekit/components-react';
+import { Room, Track } from 'livekit-client';
 import '@livekit/components-styles';
 import { io, Socket } from 'socket.io-client';
 
@@ -22,31 +23,27 @@ interface TokenPayload {
   roomName: string;
 }
 
-/* ───────────────── sync hook ───────────────── */
+/* ───────────────── sync hook (reads LiveKit state directly) ───────────────── */
 
-function useSyncMediaState(room: InstanceType<typeof import('livekit-client').Room>) {
-  const [micMuted, setMicMuted] = useState(!room.localParticipant.isMicrophoneEnabled);
-  const [cameraOff, setCameraOff] = useState(!room.localParticipant.isCameraEnabled);
-
+function useSyncMediaState(room: Room) {
+  // Re-read every 500ms for reliable sync (cheap — just property reads)
+  const [, tick] = React.useState(0);
   useEffect(() => {
-    const lp = room.localParticipant;
-    const onMuted = () => {
-      setMicMuted(!lp.isMicrophoneEnabled);
-      setCameraOff(!lp.isCameraEnabled);
-    };
-    const onUnmuted = () => {
-      setMicMuted(!lp.isMicrophoneEnabled);
-      setCameraOff(!lp.isCameraEnabled);
-    };
-    room.on('trackMuted', onMuted);
-    room.on('trackUnmuted', onUnmuted);
-    return () => {
-      room.off('trackMuted', onMuted);
-      room.off('trackUnmuted', onUnmuted);
-    };
-  }, [room]);
+    const id = setInterval(() => tick((n) => n + 1), 500);
+    return () => clearInterval(id);
+  }, []);
 
-  return { micMuted, cameraOff, setMicMuted, setCameraOff };
+  const lp = room.localParticipant;
+
+  const micMuted = !lp.isMicrophoneEnabled;
+  const cameraOff = !lp.isCameraEnabled;
+
+  // Screen share: check for an active ScreenShare track publication
+  const ssPub = lp.getTrackPublication(Track.Source.ScreenShare);
+  const screenShareActive =
+    !!ssPub && ssPub.isSubscribed && !ssPub.isMuted && !!ssPub.track;
+
+  return { micMuted, cameraOff, screenShareActive };
 }
 
 interface ClassroomContentProps {
@@ -120,8 +117,8 @@ function InnerRoomUI({
   const router = useRouter();
   const { user, userId, userName } = useAuth();
 
-  // Sync media state from LiveKit
-  const { micMuted, cameraOff, setMicMuted, setCameraOff } = useSyncMediaState(room);
+  // Sync media state from LiveKit (polls every 500ms — reliable + no event listener bugs)
+  const { micMuted, cameraOff, screenShareActive } = useSyncMediaState(room);
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('focus');
@@ -129,9 +126,8 @@ function InnerRoomUI({
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chat');
   const [pinnedSid, setPinnedSid] = useState<string | undefined>(undefined);
 
-  // Other media state
+  // Other state
   const [handRaised, setHandRaised] = useState(false);
-  const [screenShareActive, setScreenShareActive] = useState(false);
 
   // Chat toast
   const [unreadChatCount, setUnreadChatCount] = useState(0);
@@ -145,15 +141,13 @@ function InnerRoomUI({
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Media toggles
+  // Media toggles — just call LiveKit, hook polls state automatically
   const handleToggleMic = useCallback(async () => {
-    const next = !micMuted;
     try {
-      await room.localParticipant.setMicrophoneEnabled(!next);
-      setMicMuted(next);
+      await room.localParticipant.setMicrophoneEnabled(micMuted);
       socket?.emit('engagementEvent', {
         type: 'MIC',
-        payload: { active: !next },
+        payload: { active: micMuted },
       });
     } catch (e) {
       console.warn('[Room] Mic toggle failed', e);
@@ -161,13 +155,11 @@ function InnerRoomUI({
   }, [room, micMuted, socket]);
 
   const handleToggleCamera = useCallback(async () => {
-    const next = !cameraOff;
     try {
-      await room.localParticipant.setCameraEnabled(!next);
-      setCameraOff(next);
+      await room.localParticipant.setCameraEnabled(cameraOff);
       socket?.emit('engagementEvent', {
         type: 'CAMERA',
-        payload: { active: !next },
+        payload: { active: cameraOff },
       });
     } catch (e) {
       console.warn('[Room] Camera toggle failed', e);
@@ -175,18 +167,13 @@ function InnerRoomUI({
   }, [room, cameraOff, socket]);
 
   const handleToggleScreenShare = useCallback(async () => {
-    const next = !screenShareActive;
+    const willStart = !screenShareActive;
     try {
-      if (next) {
-        await room.localParticipant.setScreenShareEnabled(true);
-      } else {
-        await room.localParticipant.setScreenShareEnabled(false);
-      }
-      setScreenShareActive(next);
+      await room.localParticipant.setScreenShareEnabled(willStart);
       addToast({
         id: Date.now().toString(),
-        message: next ? 'Started screen sharing' : 'Stopped screen sharing',
-        type: next ? 'success' : 'info',
+        message: willStart ? 'Started screen sharing' : 'Stopped screen sharing',
+        type: willStart ? 'success' : 'info',
       });
     } catch (e) {
       addToast({
@@ -259,6 +246,8 @@ function InnerRoomUI({
           userName={userName || user?.email || 'Unknown'}
           unreadChatCount={unreadChatCount}
           onResetChatCount={() => setUnreadChatCount(0)}
+          pinnedParticipantSid={pinnedSid}
+          onPinParticipant={handlePinParticipant}
         />
       </div>
 

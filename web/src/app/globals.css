@@ -312,14 +312,63 @@ body {
 }
 
 /* ========== Dark table utilities ========== */
-.app-table thead th {
-  @apply text-gray-400 text-xs uppercase font-semibold tracking-wider py-3 px-4 border-b border-gray-700;
+/* ========== Mobile responsive classroom ========== */
+@media (max-width: 640px) {
+  /* Sidebar becomes full overlay on mobile */
+  .sidebar-panel {
+    position: fixed !important;
+    right: 0 !important;
+    top: 56px;
+    bottom: 0;
+    z-index: 55;
+    width: 100% !important;
+  }
+  .sidebar-panel > div {
+    width: 100% !important;
+  }
 }
 
-.app-table tbody td {
-  @apply py-3 px-4 border-b border-gray-800 text-gray-200;
+/* Mobile header adjustments */
+@media (max-width: 640px) {
+  header.glass-panel {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+  header.glass-panel h1 {
+    display: none;
+  }
+  header.glass-panel > div:first-child > div:first-child {
+    gap: 0.5rem;
+  }
 }
 
-.app-table tbody tr:hover {
-  @apply bg-gray-800/40;
+/* Mobile toolbar */
+@media (max-width: 640px) {
+  .control-btn {
+    padding: 0.5rem;
+  }
+  .control-btn svg {
+    width: 1.1rem;
+    height: 1.1rem;
+  }
+}
+
+/* Touch-friendly tap targets */
+@media (hover: none) and (pointer: coarse) {
+  .control-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .sidebar-panel button {
+    min-height: 44px;
+  }
+}
+
+/* Mobile safe-area insets */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  @media (max-width: 640px) {
+    .glass-panel.fixed.bottom-4 {
+      bottom: calc(1rem + env(safe-area-inset-bottom));
+    }
+  }
 }

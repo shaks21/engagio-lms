@@ -8,7 +8,7 @@ import {
 } from '@livekit/components-react';
 import type { Participant } from 'livekit-client';
 import { Track } from 'livekit-client';
-import { Pin, MicOff } from 'lucide-react';
+import { Pin, MicOff, Monitor, Minus } from 'lucide-react';
 
 export type ViewMode = 'focus' | 'grid' | 'immersive';
 
@@ -24,7 +24,17 @@ function getParticipantName(p: Participant): string {
 }
 
 /* ─── Safe participant tile that never crashes ─── */
-function SafeParticipantTile({ participant }: { participant: Participant }) {
+interface SafeParticipantTileProps {
+  participant: Participant;
+  trackSource?: Track.Source;
+  screenShare?: boolean;
+}
+
+function SafeParticipantTile({
+  participant,
+  trackSource = Track.Source.Camera,
+  screenShare,
+}: SafeParticipantTileProps) {
   const isSpeaking = useIsSpeaking(participant);
   const name = getParticipantName(participant);
   const initials = name
@@ -36,32 +46,32 @@ function SafeParticipantTile({ participant }: { participant: Participant }) {
 
   const videoRef = React.useRef<HTMLVideoElement>(null);
 
-  const cameraPub = participant.getTrackPublication(Track.Source.Camera);
-  const isCameraOn =
-    !!cameraPub && cameraPub.isSubscribed && !cameraPub.isMuted && !!cameraPub.track;
+  const videoPub = participant.getTrackPublication(trackSource);
+  const isVideoOn =
+    !!videoPub && videoPub.isSubscribed && !videoPub.isMuted && !!videoPub.track;
   const micPub = participant.getTrackPublication(Track.Source.Microphone);
   const isMicOn =
     !!micPub && micPub.isSubscribed && !micPub.isMuted;
 
   React.useEffect(() => {
     const videoEl = videoRef.current;
-    if (videoEl && isCameraOn && cameraPub?.track) {
-      cameraPub.track.attach(videoEl);
+    if (videoEl && isVideoOn && videoPub?.track) {
+      videoPub.track.attach(videoEl);
       return () => {
-        cameraPub.track?.detach(videoEl);
+        videoPub.track?.detach(videoEl);
       };
     }
-  }, [isCameraOn, cameraPub]);
+  }, [isVideoOn, videoPub]);
 
   return (
     <div className="h-full w-full relative">
-      {isCameraOn ? (
+      {isVideoOn ? (
         <video
           ref={videoRef}
           autoPlay
           playsInline
           muted={participant.isLocal}
-          className="h-full w-full object-cover"
+          className={`h-full w-full ${screenShare ? 'object-contain' : 'object-cover'}`}
         />
       ) : (
         <div className="h-full w-full flex items-center justify-center bg-gray-800/80">
@@ -77,8 +87,8 @@ function SafeParticipantTile({ participant }: { participant: Participant }) {
         {!isMicOn && <MicOff className="w-3.5 h-3.5 text-red-400" />}
       </div>
 
-      {/* Speaking indicator */}
-      {isSpeaking && (
+      {/* Speaking indicator (camera only) */}
+      {isSpeaking && trackSource === Track.Source.Camera && (
         <div className="absolute top-2 right-2 px-2 py-0.5 bg-green-500/90 rounded text-[10px] text-white font-medium">
           Speaking
         </div>
@@ -117,19 +127,167 @@ function FilmstripItem({
 }
 
 /* ─── Large main video tile ─── */
-function MainVideo({ participant }: { participant: Participant }) {
+function MainVideo({
+  participant,
+  isScreenShare,
+}: {
+  participant: Participant;
+  isScreenShare?: boolean;
+}) {
   return (
-    <div className="h-full rounded-xl overflow-hidden bg-gray-900 ring-1 ring-gray-800">
-      <SafeParticipantTile participant={participant} />
+    <div className="h-full rounded-xl overflow-hidden bg-gray-900 ring-1 ring-gray-800 relative">
+      <SafeParticipantTile
+        participant={participant}
+        trackSource={
+          isScreenShare ? Track.Source.ScreenShare : Track.Source.Camera
+        }
+        screenShare={isScreenShare}
+      />
+
+      {isScreenShare && (
+        <div className="absolute top-3 left-3 px-2.5 py-1 bg-red-600/90 rounded-md text-xs text-white font-semibold flex items-center gap-1.5 shadow-lg backdrop-blur-sm">
+          <Monitor className="w-3.5 h-3.5" />
+          Screen sharing
+        </div>
+      )}
     </div>
   );
 }
 
-/* ─── Self camera PiP ─── */
-function SelfCamera({ participant }: { participant: Participant }) {
+/* ─── Draggable self-camera PiP ─── */
+function DraggableSelfPiP({
+  participant,
+  onClickPinSelf,
+}: {
+  participant: Participant;
+  onClickPinSelf: () => void;
+}) {
+  const [minimized, setMinimized] = React.useState(false);
+  const [offset, setOffset] = React.useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = React.useState(false);
+  const dragData = React.useRef({
+    startX: 0,
+    startY: 0,
+    initialX: 0,
+    initialY: 0,
+  });
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const hasDragged = React.useRef(false);
+
+  /* Window-level drag listeners */
+  React.useEffect(() => {
+    if (!dragging) return;
+
+    const handleMove = (e: MouseEvent) => {
+      const dx = e.clientX - dragData.current.startX;
+      const dy = e.clientY - dragData.current.startY;
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasDragged.current = true;
+      }
+
+      const el = containerRef.current;
+      const parent = el?.offsetParent as HTMLElement | null;
+      if (!el || !parent) return;
+
+      const maxX = parent.clientWidth - el.offsetWidth;
+      const maxY = parent.clientHeight - el.offsetHeight;
+
+      let newX = dragData.current.initialX + dx;
+      let newY = dragData.current.initialY + dy;
+
+      newX = Math.max(-el.offsetLeft, Math.min(newX, maxX - el.offsetLeft));
+      newY = Math.max(-el.offsetTop, Math.min(newY, maxY - el.offsetTop));
+
+      setOffset({ x: newX, y: newY });
+    };
+
+    const handleUp = () => {
+      setDragging(false);
+    };
+
+    window.addEventListener('mousemove', handleMove);
+    window.addEventListener('mouseup', handleUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMove);
+      window.removeEventListener('mouseup', handleUp);
+    };
+  }, [dragging]);
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('button')) return;
+
+    hasDragged.current = false;
+    dragData.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      initialX: offset.x,
+      initialY: offset.y,
+    };
+    setDragging(true);
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (hasDragged.current) {
+      e.stopPropagation();
+      return;
+    }
+    if (minimized) {
+      setMinimized(false);
+    } else {
+      onClickPinSelf();
+    }
+  };
+
+  const name = getParticipantName(participant);
+  const initials = name
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+
+  if (minimized) {
+    return (
+      <div
+        ref={containerRef}
+        onMouseDown={handleMouseDown}
+        onClick={handleClick}
+        style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+        className="absolute bottom-20 right-4 z-30 rounded-full bg-engagio-600 text-white font-bold text-sm shadow-lg ring-2 ring-white/20 hover:ring-white/40 cursor-pointer select-none flex items-center justify-center w-12 h-12"
+        title="Click to restore"
+      >
+        {initials}
+      </div>
+    );
+  }
+
   return (
-    <div className="absolute bottom-20 right-4 w-56 sm:w-64 h-40 sm:h-44 rounded-xl overflow-hidden shadow-2xl z-30 ring-1 ring-gray-700 bg-gray-900">
+    <div
+      ref={containerRef}
+      onMouseDown={handleMouseDown}
+      onClick={handleClick}
+      style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+      className={`absolute bottom-20 right-4 w-56 sm:w-64 h-40 sm:h-44 rounded-xl overflow-hidden shadow-2xl z-30 ring-1 ring-gray-700 bg-gray-900 select-none ${
+        dragging ? 'cursor-grabbing' : 'cursor-grab'
+      }`}
+    >
       <SafeParticipantTile participant={participant} />
+
+      {/* Minimize button */}
+      <button
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          setMinimized(true);
+        }}
+        className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 rounded-md text-white transition-colors"
+        title="Minimize"
+      >
+        <Minus className="w-3.5 h-3.5" />
+      </button>
     </div>
   );
 }
@@ -145,23 +303,44 @@ export default function FocusLayout({
 
   if (!localParticipant) return null;
 
-  // Exclude local from main stage — self is always in floating PiP
   const remoteParticipants = allParticipants.filter(
     (p) => p.sid !== localParticipant.sid
   );
 
-  // Determine focused participant
-  const focusedParticipant = pinnedParticipantSid
-    ? remoteParticipants.find((p) => p.sid === pinnedParticipantSid) || null
-    : remoteParticipants[0] || null;
+  /* Detect active screen-share */
+  const screenSharingParticipant = React.useMemo(() => {
+    return (
+      allParticipants.find((p) => {
+        const pub = p.getTrackPublication(Track.Source.ScreenShare);
+        return !!pub && pub.isSubscribed && !pub.isMuted && !!pub.track;
+      }) || null
+    );
+  }, [allParticipants]);
+
+  /* Focus priority: pinned > screen share > first remote > null */
+  const focusedParticipant = React.useMemo(() => {
+    if (pinnedParticipantSid) {
+      return (
+        allParticipants.find((p) => p.sid === pinnedParticipantSid) || null
+      );
+    }
+    if (screenSharingParticipant) {
+      return screenSharingParticipant;
+    }
+    return remoteParticipants[0] || null;
+  }, [pinnedParticipantSid, allParticipants, screenSharingParticipant, remoteParticipants]);
 
   const isImmersive = viewMode === 'immersive';
+  const isScreenShareFocused =
+    !!focusedParticipant &&
+    !!screenSharingParticipant &&
+    focusedParticipant.sid === screenSharingParticipant.sid;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative">
-      {/* ── Main stage: remote participants only ── */}
+      {/* ── Main stage ── */}
       <div className="flex-1 overflow-hidden relative">
-        {remoteParticipants.length === 0 ? (
+        {remoteParticipants.length === 0 && !focusedParticipant ? (
           <div className="h-full flex items-center justify-center">
             <div className="text-center">
               <div className="text-6xl mb-4">👋</div>
@@ -191,7 +370,10 @@ export default function FocusLayout({
           <div className="h-full flex flex-col p-2 gap-2">
             {focusedParticipant && (
               <div className="flex-1 min-h-0 relative">
-                <MainVideo participant={focusedParticipant} />
+                <MainVideo
+                  participant={focusedParticipant}
+                  isScreenShare={isScreenShareFocused}
+                />
               </div>
             )}
 
@@ -217,8 +399,13 @@ export default function FocusLayout({
         )}
       </div>
 
-      {/* ── Floating self camera (PiP) ── */}
-      {!isImmersive && <SelfCamera participant={localParticipant} />}
+      {/* ── Floating self-camera PiP ── */}
+      {!isImmersive && (
+        <DraggableSelfPiP
+          participant={localParticipant}
+          onClickPinSelf={() => onPinParticipant?.(localParticipant.sid)}
+        />
+      )}
     </div>
   );
 }

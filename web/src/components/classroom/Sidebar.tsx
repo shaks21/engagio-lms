@@ -11,8 +11,16 @@ import {
   Users,
   HelpCircle,
   X,
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  Pin,
+  Hand,
 } from 'lucide-react';
 import type { Participant } from 'livekit-client';
+import { Track } from 'livekit-client';
 import Chat from './Chat';
 
 export type SidebarTab = 'chat' | 'participants' | 'qa';
@@ -28,20 +36,32 @@ interface SidebarProps {
   userName: string;
   unreadChatCount: number;
   onResetChatCount?: () => void;
+  pinnedParticipantSid?: string;
+  onPinParticipant?: (sid: string) => void;
 }
 
-/* ─── Live participant row ─── */
+/* ─── Live participant row with media indicators ─── */
 function LiveParticipantRow({
   participant,
   isLocal,
+  isPinned,
+  onClick,
+  isHandRaised,
 }: {
   participant: Participant;
   isLocal: boolean;
+  isPinned?: boolean;
+  onClick?: () => void;
+  isHandRaised?: boolean;
 }) {
   const isSpeaking = useIsSpeaking(participant);
-  // Prefer display name, fallback to identity
   const name = participant.name || participant.identity || 'Anonymous';
+
   const audioMuted = !participant.isMicrophoneEnabled;
+  const cameraPub = participant.getTrackPublication(Track.Source.Camera);
+  const cameraOff = !cameraPub || !cameraPub.isSubscribed || cameraPub.isMuted;
+  const ssPub = participant.getTrackPublication(Track.Source.ScreenShare);
+  const screenSharing = !!ssPub && ssPub.isSubscribed && !ssPub.isMuted;
 
   const initials = name
     .split(' ')
@@ -51,45 +71,62 @@ function LiveParticipantRow({
     .slice(0, 2);
 
   return (
-    <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-800/50 transition-colors border-b border-gray-800/50">
-      <div className="relative">
+    <button
+      onClick={onClick}
+      className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-800/50 transition-colors border-b border-gray-800/50 text-left ${
+        isPinned ? 'bg-engagio-900/30 border-l-2 border-l-engagio-500' : ''
+      }`}
+    >
+      <div className="relative flex-shrink-0">
         <div
-          className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold ${
+          className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
             isSpeaking ? 'bg-green-600' : 'bg-gray-700'
-          } transition-colors`}
+          }`}
         >
           {initials}
         </div>
+        {isSpeaking && (
+          <span className="absolute -bottom-0 -right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-gray-900" />
+        )}
       </div>
+
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-white truncate">
-          {name} {isLocal && <span className="text-engagio-400 text-xs">(You)</span>}
+        <p className="text-sm font-medium text-white truncate flex items-center gap-1.5">
+          {name}
+          {isLocal && <span className="text-engagio-400 text-xs">(You)</span>}
+          {isPinned && <Pin className="w-3 h-3 text-engagio-400 flex-shrink-0" />}
         </p>
         <p className="text-[11px] text-gray-500 capitalize">
           {isLocal ? 'Host' : 'Participant'}
         </p>
       </div>
-      <div className="flex items-center gap-1.5">
-        <div
-          className={`w-2 h-2 rounded-full ${
-            audioMuted ? 'bg-edu-danger' : 'bg-edu-success'
-          }`}
-        />
+
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {!audioMuted ? <Mic className="w-3.5 h-3.5 text-green-400" /> : <MicOff className="w-3.5 h-3.5 text-gray-500" />}
+        {!cameraOff ? <Video className="w-3.5 h-3.5 text-green-400" /> : <VideoOff className="w-3.5 h-3.5 text-gray-500" />}
+        {screenSharing && <MonitorUp className="w-3.5 h-3.5 text-blue-400" />}
+        {isHandRaised && <Hand className="w-3.5 h-3.5 text-yellow-400" />}
       </div>
-    </div>
+    </button>
   );
 }
 
 /* ─── Participants panel using LiveKit hook ─── */
-function ParticipantsPanel({ userId }: { userId: string }) {
+function ParticipantsPanel({
+  userId,
+  pinnedSid,
+  onPinParticipant,
+}: {
+  userId: string;
+  pinnedSid?: string;
+  onPinParticipant?: (sid: string) => void;
+}) {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
 
   const sortedParticipants = useMemo(() => {
     const list: Participant[] = [];
-    // Local first
     if (localParticipant) list.push(localParticipant);
-    // Then remotes
     participants.forEach((p) => {
       if (p.sid !== localParticipant?.sid) list.push(p);
     });
@@ -106,6 +143,8 @@ function ParticipantsPanel({ userId }: { userId: string }) {
             key={p.sid}
             participant={p}
             isLocal={p.sid === localParticipant?.sid}
+            isPinned={p.sid === pinnedSid}
+            onClick={() => onPinParticipant?.(p.sid)}
           />
         ))
       )}
@@ -179,6 +218,8 @@ export default function Sidebar({
   userName,
   unreadChatCount,
   onResetChatCount,
+  pinnedParticipantSid,
+  onPinParticipant,
 }: SidebarProps) {
   return (
     <aside
@@ -240,7 +281,11 @@ export default function Sidebar({
           )}
 
           {tab === 'participants' && (
-            <ParticipantsPanel userId={userId} />
+            <ParticipantsPanel
+              userId={userId}
+              pinnedSid={pinnedParticipantSid}
+              onPinParticipant={onPinParticipant}
+            />
           )}
 
           {tab === 'qa' && <QAPanel />}
