@@ -1,218 +1,242 @@
-import React from 'react';
+'use client';
 
-function MicrophoneIcon({ active }: { active: boolean }) {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={active ? 'currentColor' : 'currentColor'}
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {active ? (
-        <>
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-          <line x1="12" y1="19" x2="12" y2="23" />
-          <line x1="8" y1="23" x2="16" y2="23" />
-        </>
-      ) : (
-        <>
-          <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-          <line x1="1" y1="1" x2="23" y2="23" stroke="red" />
-        </>
-      )}
-    </svg>
-  );
-}
+import React, { useState } from 'react';
+import {
+  Mic,
+  MicOff,
+  Video,
+  VideoOff,
+  MonitorUp,
+  Hand,
+  MessageSquare,
+  Smile,
+  PhoneOff,
+  MoreHorizontal,
+  PanelRight,
+  Pin,
+} from 'lucide-react';
+import { useRoomContext } from '@livekit/components-react';
+import type { Participant } from 'livekit-client';
 
-function CameraIcon({ active }: { active: boolean }) {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {active ? (
-        <>
-          <path d="M23 7l-7 5 7 5V7z" />
-          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-        </>
-      ) : (
-        <>
-          <path d="M23 7l-7 5 7 5V7z" />
-          <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
-          <line x1="1" y1="1" x2="23" y2="23" stroke="red" />
-        </>
-      )}
-    </svg>
-  );
-}
-
-function ScreenShareIcon({ active }: { active: boolean }) {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke={active ? 'currentColor' : 'currentColor'}
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <rect x="2" y="3" width="28" height="14" rx="2" ry="2" />
-      {active ? (
-        <>
-          <path d="M8 18h8" />
-          <path d="M12 21V18" />
-        </>
-      ) : (
-        <line x1="1" y1="1" x2="23" y2="23" stroke="red" />
-      )}
-    </svg>
-  );
-}
-
-function ChatIcon({ count }: { count: number }) {
-  return (
-    <span className="flex items-center gap-1 relative">
-      💬
-      {count > 0 && (
-        <span className="absolute -top-1 -right-2 bg-red-500 text-white text-xs w-4 h-4 rounded-full flex items-center justify-center">
-          {count > 9 ? '9+' : count}
-        </span>
-      )}
-    </span>
-  );
-}
-
-function LeaveIcon() {
-  return (
-    <svg
-      width="28"
-      height="28"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-      <polyline points="16 17 21 12 16 7" />
-      <line x1="21" y1="12" x2="17" y2="12" />
-    </svg>
-  );
+export interface Toast {
+  id: string;
+  message: string;
+  icon?: React.ReactNode;
+  type?: 'info' | 'success' | 'warning' | 'error';
 }
 
 interface ToolbarProps {
-  onToggleMic: (active: boolean) => void;
-  onToggleCamera: (active: boolean) => void;
-  onToggleScreenShare: (active: boolean) => void;
-  onToggleChat?: () => void;
+  micMuted: boolean;
+  cameraOff: boolean;
+  handRaised: boolean;
+  screenShareActive: boolean;
+  unreadChatCount: number;
+  onToggleMic: () => void;
+  onToggleCamera: () => void;
+  onToggleScreenShare: () => void;
+  onToggleHandRaise: () => void;
+  onToggleChat: () => void;
+  onToggleSidebar?: () => void;
   onLeave: () => void;
-  micActive?: boolean;
-  cameraActive?: boolean;
-  screenShareActive?: boolean;
-  unreadMessages?: number;
+  onToast?: (toast: Toast) => void;
+  onPinLocal?: () => void;
+  isLocalPinned?: boolean;
+}
+
+function TooltipButton({
+  children,
+  onClick,
+  active = false,
+  activeClass = '',
+  inactiveClass = '',
+  tooltip,
+  badge,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  active?: boolean;
+  activeClass?: string;
+  inactiveClass?: string;
+  tooltip: string;
+  badge?: React.ReactNode;
+}) {
+  const [showTip, setShowTip] = useState(false);
+
+  return (
+    <button
+      onClick={onClick}
+      onMouseEnter={() => setShowTip(true)}
+      onMouseLeave={() => setShowTip(false)}
+      className={`control-btn group relative p-2.5 sm:p-3 rounded-xl transition-all ${
+        active ? activeClass : inactiveClass
+      }`}
+      aria-label={tooltip}
+    >
+      {children}
+      {badge && <span className="absolute -top-1 -right-1">{badge}</span>}
+      <span
+        className={`absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] px-2 py-1 rounded opacity-0 transition-opacity whitespace-nowrap pointer-events-none z-50 ${
+          showTip ? '!opacity-100' : ''
+        }`}
+      >
+        {tooltip}
+      </span>
+    </button>
+  );
 }
 
 export default function Toolbar({
+  micMuted,
+  cameraOff,
+  handRaised,
+  screenShareActive,
+  unreadChatCount = 0,
   onToggleMic,
   onToggleCamera,
   onToggleScreenShare,
+  onToggleHandRaise,
   onToggleChat,
+  onToggleSidebar,
   onLeave,
-  micActive = true,
-  cameraActive = false,
-  screenShareActive = false,
-  unreadMessages = 0,
+  onToast,
+  onPinLocal,
+  isLocalPinned = false,
 }: ToolbarProps) {
   return (
-    <div className="border-b border-gray-200 bg-gray-900 text-white px-4 py-3">
-      <div className="flex items-center justify-between max-w-6xl mx-auto">
-        {/* Left: branding */}
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold">Engagio</span>
-          <span className="text-gray-400">Virtual Classroom</span>
-        </div>
-
-        {/* Center: controls */}
-        <div className="flex items-center gap-3">
-          {/* Microphone */}
-          <button
-            onClick={() => onToggleMic(!micActive)}
-            className={`p-3 rounded-lg transition-colors flex items-center gap-2 ${
-              micActive
-                ? 'bg-green-600 hover:bg-green-700'
-                : 'bg-red-600 hover:bg-red-700'
-            }`}
-            title={micActive ? 'Mute Microphone' : 'Unmute Microphone'}
-            aria-label={micActive ? 'Mute microphone' : 'Unmute microphone'}
+    <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-[60]">
+      <div className="glass-panel rounded-2xl px-2.5 sm:px-4 py-2 sm:py-3 flex items-center gap-1.5 sm:gap-2 shadow-2xl shadow-black/50">
+        {/* ── Media Controls ── */}
+        <div className="flex items-center gap-1.5 sm:gap-2 pr-2 sm:pr-3 border-r border-gray-700">
+          <TooltipButton
+            onClick={() => {
+              onToggleMic();
+              onToast?.({
+                id: Date.now().toString(),
+                message: micMuted ? 'Microphone unmuted' : 'Microphone muted',
+                type: micMuted ? 'success' : 'warning',
+              });
+            }}
+            active={!micMuted}
+            activeClass="bg-gray-700 hover:bg-gray-600 text-white"
+            inactiveClass="bg-edu-danger hover:bg-red-700 text-white"
+            tooltip={micMuted ? 'Unmute (Ctrl+D)' : 'Mute (Ctrl+D)'}
           >
-            <MicrophoneIcon active={micActive} />
-            <span className="text-sm">{micActive ? 'Mic On' : 'Mic Off'}</span>
-          </button>
+            {micMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+          </TooltipButton>
 
-          {/* Camera */}
-          <button
-            onClick={() => onToggleCamera(!cameraActive)}
-            className={`p-3 rounded-lg transition-colors flex items-center gap-2 ${
-              cameraActive
-                ? 'bg-green-600 hover:bg-green-700'
-                : 'bg-red-600 hover:bg-red-700'
-            }`}
-            title={cameraActive ? 'Turn Off Camera' : 'Turn On Camera'}
-            aria-label={cameraActive ? 'Turn off camera' : 'Turn on camera'}
+          <TooltipButton
+            onClick={() => {
+              onToggleCamera();
+              onToast?.({
+                id: Date.now().toString(),
+                message: cameraOff ? 'Camera turned on' : 'Camera turned off',
+                type: cameraOff ? 'success' : 'warning',
+              });
+            }}
+            active={!cameraOff}
+            activeClass="bg-gray-700 hover:bg-gray-600 text-white"
+            inactiveClass="bg-edu-danger hover:bg-red-700 text-white"
+            tooltip={cameraOff ? 'Start Video (Ctrl+E)' : 'Stop Video (Ctrl+E)'}
           >
-            <CameraIcon active={cameraActive} />
-            <span className="text-sm">{cameraActive ? 'Cam On' : 'Cam Off'}</span>
-          </button>
+            {cameraOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+          </TooltipButton>
 
-          {/* Screen Share */}
-          <button
-            onClick={() => onToggleScreenShare(!screenShareActive)}
-            className={`p-3 rounded-lg transition-colors ${
-              screenShareActive
-                ? 'bg-green-600 hover:bg-green-700'
-                : 'bg-gray-700 hover:bg-gray-600'
-            }`}
-            title={screenShareActive ? 'Stop Sharing' : 'Share Screen'}
-            aria-label={screenShareActive ? 'Stop screen share' : 'Share screen'}
+          <TooltipButton
+            onClick={onToggleScreenShare}
+            active={screenShareActive}
+            activeClass="bg-green-600 hover:bg-green-700 text-white"
+            inactiveClass="bg-gray-700 hover:bg-gray-600 text-white"
+            tooltip="Share Screen"
           >
-            <ScreenShareIcon active={screenShareActive} />
-          </button>
+            <MonitorUp className="w-5 h-5" />
+          </TooltipButton>
 
-          {/* Chat */}
-          {onToggleChat && (
-            <button
-              onClick={onToggleChat}
-              className="p-3 rounded-lg bg-gray-700 hover:bg-gray-600 transition-colors"
-              title="Toggle Chat"
+          {onPinLocal && (
+            <TooltipButton
+              onClick={onPinLocal}
+              active={isLocalPinned}
+              activeClass="bg-engagio-600 hover:bg-engagio-700 text-white"
+              inactiveClass="bg-gray-700 hover:bg-gray-600 text-white"
+              tooltip={isLocalPinned ? 'Unpin Self' : 'Pin Self'}
             >
-              <ChatIcon count={unreadMessages} />
-            </button>
+              <Pin className="w-5 h-5" />
+            </TooltipButton>
           )}
         </div>
 
-        {/* Right: leave */}
-        <button
-          onClick={onLeave}
-          className="px-4 py-2.5 bg-red-600 hover:bg-red-700 rounded-lg font-medium text-sm transition-colors flex items-center gap-2"
-          title="Leave Classroom"
-        >
-          <LeaveIcon />
-          <span>Leave</span>
-        </button>
+        {/* ── Engagement Controls ── */}
+        <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 border-r border-gray-700">
+          <TooltipButton
+            onClick={onToggleHandRaise}
+            active={handRaised}
+            activeClass="bg-yellow-500/20 text-yellow-400"
+            inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
+            tooltip="Raise Hand (Ctrl+R)"
+            badge={
+              handRaised ? (
+                <span className="w-4 h-4 bg-yellow-500 text-black text-[10px] font-bold rounded-full flex items-center justify-center">
+                  !
+                </span>
+              ) : undefined
+            }
+          >
+            <Hand className="w-5 h-5" />
+          </TooltipButton>
+
+          <TooltipButton
+            onClick={onToggleChat}
+            active={false}
+            inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
+            tooltip="Chat"
+            badge={
+              unreadChatCount > 0 ? (
+                <span className="w-4 h-4 min-w-[16px] bg-engagio-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {unreadChatCount > 9 ? '9+' : unreadChatCount}
+                </span>
+              ) : undefined
+            }
+          >
+            <MessageSquare className="w-5 h-5" />
+          </TooltipButton>
+
+          <TooltipButton
+            onClick={() => {}}
+            tooltip="Reactions"
+            inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
+          >
+            <Smile className="w-5 h-5" />
+          </TooltipButton>
+        </div>
+
+        {/* ── Session Controls ── */}
+        <div className="flex items-center gap-1.5 sm:gap-2 pl-2 sm:pl-3">
+          {onToggleSidebar && (
+            <TooltipButton
+              onClick={onToggleSidebar}
+              tooltip="Toggle Sidebar (Ctrl+B)"
+              inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
+            >
+              <PanelRight className="w-5 h-5" />
+            </TooltipButton>
+          )}
+
+          <TooltipButton
+            onClick={() => {}}
+            tooltip="More"
+            inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
+          >
+            <MoreHorizontal className="w-5 h-5" />
+          </TooltipButton>
+
+          <button
+            onClick={onLeave}
+            className="control-btn flex items-center gap-2 px-3 sm:px-4 py-2.5 sm:py-3 rounded-xl bg-edu-danger hover:bg-red-700 text-white transition-all ml-1"
+            aria-label="Leave"
+          >
+            <PhoneOff className="w-5 h-5" />
+            <span className="text-sm font-medium hidden sm:inline">Leave</span>
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -2,18 +2,16 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  LiveKitRoom,
-  VideoConference,
-  useRoomContext,
-} from '@livekit/components-react';
+import { LiveKitRoom, useRoomContext } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { io, Socket } from 'socket.io-client';
 
 import { useAuth } from '@/lib/auth-context';
-import Toolbar from '@/components/classroom/Toolbar';
-import Chat from '@/components/classroom/Chat';
-import Timer from '@/components/classroom/Timer';
+import GlassHeader, { type ViewMode } from './GlassHeader';
+import FocusLayout from './FocusLayout';
+import Sidebar, { type SidebarTab } from './Sidebar';
+import Toolbar from './Toolbar';
+import ToastContainer, { type Toast } from './ToastContainer';
 
 /* ───────────────── types ───────────────── */
 
@@ -27,14 +25,21 @@ interface ClassroomContentProps {
   sessionId: string;
 }
 
-function useClassroomSocket(sessionId: string, userId: string | null, tenantId: string) {
+/* ───────────────── socket hook ───────────────── */
+
+function useClassroomSocket(
+  sessionId: string,
+  userId: string | null,
+  tenantId: string
+) {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
     if (!userId || !sessionId || !tenantId) return;
 
-    const SOCKET = process.env.NEXT_PUBLIC_SOCKET_URL || 'wss://engagio.duckdns.org';
+    const SOCKET =
+      process.env.NEXT_PUBLIC_SOCKET_URL || 'wss://engagio.duckdns.org/classroom';
     const sk = io(SOCKET, {
       transports: ['websocket'],
       autoConnect: true,
@@ -42,7 +47,6 @@ function useClassroomSocket(sessionId: string, userId: string | null, tenantId: 
 
     const onConnect = () => {
       setConnected(true);
-      // Join the classroom room
       sk.emit('joinClassroom', {
         tenantId,
         sessionId,
@@ -53,9 +57,7 @@ function useClassroomSocket(sessionId: string, userId: string | null, tenantId: 
       });
     };
 
-    const onDisconnect = () => {
-      setConnected(false);
-    };
+    const onDisconnect = () => setConnected(false);
 
     sk.on('connect', onConnect);
     sk.on('disconnect', onDisconnect);
@@ -77,102 +79,207 @@ function useClassroomSocket(sessionId: string, userId: string | null, tenantId: 
   return { socket, connected };
 }
 
-/* ───────────────── child inside LiveKitRoom ───────────────── */
+/* ───────────────── Room UI (runs inside LiveKitRoom) ───────────────── */
 
-function RoomUI({ sessionId, socket }: { sessionId: string; socket: Socket | null }) {
+function InnerRoomUI({
+  sessionId,
+  socket,
+}: {
+  sessionId: string;
+  socket: Socket | null;
+}) {
   const room = useRoomContext();
   const router = useRouter();
   const { user, userId, userName } = useAuth();
 
-  const [micActive, setMicActive] = useState(true);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [showChat, setShowChat] = useState(true);
+  // View state
+  const [viewMode, setViewMode] = useState<ViewMode>('focus');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chat');
+  const [pinnedSid, setPinnedSid] = useState<string | undefined>(undefined);
 
+  // Media state
+  const [micMuted, setMicMuted] = useState(false);
+  const [cameraOff, setCameraOff] = useState(true);
+  const [handRaised, setHandRaised] = useState(false);
+  const [screenShareActive, setScreenShareActive] = useState(false);
+
+  // Chat toast
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  const addToast = useCallback((toast: Toast) => {
+    setToasts((prev) => [...prev, toast]);
+  }, []);
+
+  const removeToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  // Media toggles
   const handleToggleMic = useCallback(async () => {
+    const next = !micMuted;
     try {
-      await room.localParticipant.setMicrophoneEnabled(!micActive);
-      setMicActive(!micActive);
-      socket?.emit('engagementEvent', { type: 'MIC', payload: { active: !micActive } });
-    } catch { /* no-op */ }
-  }, [room, micActive, socket]);
+      await room.localParticipant.setMicrophoneEnabled(!next);
+      setMicMuted(next);
+      socket?.emit('engagementEvent', {
+        type: 'MIC',
+        payload: { active: !next },
+      });
+    } catch (e) {
+      console.warn('[Room] Mic toggle failed', e);
+    }
+  }, [room, micMuted, socket]);
 
   const handleToggleCamera = useCallback(async () => {
+    const next = !cameraOff;
     try {
-      await room.localParticipant.setCameraEnabled(!cameraActive);
-      setCameraActive(!cameraActive);
-      socket?.emit('engagementEvent', { type: 'CAMERA', payload: { active: !cameraActive } });
-    } catch { /* no-op */ }
-  }, [room, cameraActive, socket]);
+      await room.localParticipant.setCameraEnabled(!next);
+      setCameraOff(next);
+      socket?.emit('engagementEvent', {
+        type: 'CAMERA',
+        payload: { active: !next },
+      });
+    } catch (e) {
+      console.warn('[Room] Camera toggle failed', e);
+    }
+  }, [room, cameraOff, socket]);
+
+  const handleToggleScreenShare = useCallback(async () => {
+    const next = !screenShareActive;
+    try {
+      if (next) {
+        await room.localParticipant.setScreenShareEnabled(true);
+      } else {
+        await room.localParticipant.setScreenShareEnabled(false);
+      }
+      setScreenShareActive(next);
+      addToast({
+        id: Date.now().toString(),
+        message: next ? 'Started screen sharing' : 'Stopped screen sharing',
+        type: next ? 'success' : 'info',
+      });
+    } catch (e) {
+      addToast({
+        id: Date.now().toString(),
+        message: 'Screen share not available',
+        type: 'error',
+      });
+    }
+  }, [room, screenShareActive, addToast]);
+
+  const handleToggleHandRaise = useCallback(() => {
+    const next = !handRaised;
+    setHandRaised(next);
+    addToast({
+      id: Date.now().toString(),
+      message: next ? 'Hand raised' : 'Hand lowered',
+      type: 'info',
+    });
+  }, [handRaised, addToast]);
+
+  const handleToggleChat = useCallback(() => {
+    setSidebarTab('chat');
+    setSidebarOpen((o) => !o);
+    setUnreadChatCount(0);
+  }, []);
+
+  const handleToggleSidebar = useCallback(() => {
+    setSidebarOpen((o) => !o);
+  }, []);
 
   const handleLeave = useCallback(() => {
     room.disconnect();
     router.push('/dashboard');
   }, [room, router]);
 
+  const handlePinParticipant = useCallback(
+    (sid: string) => {
+      setPinnedSid((prev) => (prev === sid ? undefined : sid));
+    },
+    []
+  );
+
+  const handleUnreadChange = useCallback((count: number) => {
+    setUnreadChatCount(count);
+  }, []);
+
   return (
     <>
-      <div className="flex-1 flex overflow-hidden">
-        {/* Video */}
-        <div className="flex-1 overflow-auto">
-          <VideoConference />
-        </div>
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Main Stage */}
+        <main className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${
+          sidebarOpen ? 'mr-0' : ''
+        }`}>
+          <FocusLayout
+            viewMode={viewMode}
+            pinnedParticipantSid={pinnedSid}
+            onPinParticipant={handlePinParticipant}
+          />
+        </main>
 
-        {/* Chat sidebar */}
-        {showChat && (
-          <div className="w-80 border-l border-gray-700 bg-gray-800/50 flex flex-col">
-            <div className="p-2 border-b border-gray-700 text-gray-300 text-sm font-medium flex items-center justify-between">
-              <span>Chat</span>
-              <button
-                onClick={() => setShowChat(false)}
-                className="text-gray-500 hover:text-gray-300 text-xs"
-                title="Hide Chat"
-              >
-                ✕
-              </button>
-            </div>
-            <div className="flex-1 overflow-hidden">
-              <Chat
-                userId={userId || ''}
-                userName={userName || user?.email || 'Unknown'}
-                socket={socket}
-                sessionId={sessionId}
-                embedded
-              />
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="bg-gray-900 border-t border-gray-800 px-4 py-2">
-        <Toolbar
-          onToggleMic={handleToggleMic}
-          onToggleCamera={handleToggleCamera}
-          onLeave={handleLeave}
-          micActive={micActive}
-          cameraActive={cameraActive}
-          screenShareActive={false}
-          onToggleScreenShare={() => alert('Screen share coming soon')}
-          onToggleChat={() => setShowChat((v) => !v)}
-          unreadMessages={0}
+        {/* Sidebar */}
+        <Sidebar
+          open={sidebarOpen}
+          tab={sidebarTab}
+          onTabChange={setSidebarTab}
+          onClose={() => setSidebarOpen(false)}
+          sessionId={sessionId}
+          socket={socket}
+          userId={userId || ''}
+          userName={userName || user?.email || 'Unknown'}
+          unreadChatCount={unreadChatCount}
+          onResetChatCount={() => setUnreadChatCount(0)}
         />
       </div>
+
+      {/* Floating Header */}
+      <GlassHeader
+        connected={room.state === 'connected'}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        onLeave={handleLeave}
+        participantCount={room.numParticipants}
+      />
+
+      {/* Floating Toolbar */}
+      <Toolbar
+        micMuted={micMuted}
+        cameraOff={cameraOff}
+        handRaised={handRaised}
+        screenShareActive={screenShareActive}
+        unreadChatCount={unreadChatCount}
+        onToggleMic={handleToggleMic}
+        onToggleCamera={handleToggleCamera}
+        onToggleScreenShare={handleToggleScreenShare}
+        onToggleHandRaise={handleToggleHandRaise}
+        onToggleChat={handleToggleChat}
+        onToggleSidebar={handleToggleSidebar}
+        onLeave={handleLeave}
+        onToast={addToast}
+        onPinLocal={() => handlePinParticipant(room.localParticipant.sid)}
+        isLocalPinned={pinnedSid === room.localParticipant.sid}
+      />
+
+      {/* Toast notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
     </>
   );
 }
 
-/* ───────────────── main component ───────────────── */
+/* ───────────────── Main exported component ───────────────── */
 
 export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
-  const router = useRouter();
   const { user, userId, userName, loading: authLoading } = useAuth();
   const tenantId = user?.tenantId || userId || '';
 
-  /* 1️⃣  ALL hooks must run unconditionally before any early-return */
   const [token, setToken] = useState<string | null>(null);
   const [serverUrl, setServerUrl] = useState('');
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const { socket } = useClassroomSocket(sessionId, userId, tenantId as string);
 
   const onConnected = useCallback(() => {
     console.log('[LiveKit] Connected');
@@ -188,8 +295,6 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
     console.error('[LiveKit] Error:', err);
     setError(err.message);
   }, []);
-
-  const { socket } = useClassroomSocket(sessionId, userId, tenantId as string);
 
   /* ---- token fetch ---- */
   useEffect(() => {
@@ -232,16 +337,20 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
     };
 
     fetchToken();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [userId, sessionId, userName, user?.email]);
 
-  /* 2️⃣  Early returns — AFTER all hooks have already run */
+  /* ---- loading / error / unauth states ---- */
   if (authLoading || loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="h-screen w-screen bg-edu-dark flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4" />
-          <p className="text-gray-400">{authLoading ? 'Authenticating…' : 'Connecting to classroom…'}</p>
+          <div className="w-12 h-12 border-2 border-engagio-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400">
+            {authLoading ? 'Authenticating…' : 'Connecting to classroom…'}
+          </p>
         </div>
       </div>
     );
@@ -249,12 +358,15 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
 
   if (!userId) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="h-screen w-screen bg-edu-dark flex items-center justify-center">
         <div className="text-center">
           <div className="text-4xl mb-4">🔒</div>
           <h2 className="text-white text-xl mb-2">Authentication Required</h2>
           <p className="text-gray-400 mb-4">Please log in to join the classroom.</p>
-          <a href="/login" className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <a
+            href="/login"
+            className="inline-block px-4 py-2 bg-engagio-600 text-white rounded-lg hover:bg-engagio-700 transition-colors"
+          >
             Go to Login
           </a>
         </div>
@@ -264,12 +376,15 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="h-screen w-screen bg-edu-dark flex items-center justify-center">
         <div className="text-center">
-          <div className="text-red-500 text-4xl mb-4">⚠️</div>
+          <div className="text-edu-danger text-4xl mb-4">⚠️</div>
           <h2 className="text-white text-xl mb-2">Failed to Join Classroom</h2>
           <p className="text-gray-400">{error}</p>
-          <a href="/dashboard" className="mt-4 inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+          <a
+            href="/dashboard"
+            className="mt-4 inline-block px-4 py-2 bg-engagio-600 text-white rounded-lg hover:bg-engagio-700 transition-colors"
+          >
             Back to Dashboard
           </a>
         </div>
@@ -279,52 +394,31 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
 
   if (!token || !serverUrl) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+      <div className="h-screen w-screen bg-edu-dark flex items-center justify-center">
         <div className="text-center">
           <div className="text-6xl mb-4">🎥</div>
-          <p className="text-white text-xl mb-2">Waiting for LiveKit connection…</p>
+          <p className="text-white text-xl mb-2">Preparing classroom…</p>
         </div>
       </div>
     );
   }
 
-  /* 🎥 Render the actual classroom */
+  /* ── Live classroom ── */
   return (
-    <div className="min-h-screen bg-gray-900 flex flex-col">
-      {/* Header */}
-      <div className="bg-gray-800 border-b border-gray-700 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <h1 className="text-white text-lg font-semibold">Virtual Classroom</h1>
-          <span className="text-sm">
-            {connected ? (
-              <span className="text-green-500">● Live</span>
-            ) : (
-              <span className="text-yellow-500">● Connecting…</span>
-            )}
-          </span>
-          <Timer startTime={new Date(Date.now())} />
-        </div>
-        <div className="text-xs text-gray-500 font-mono">{sessionId.slice(0, 8)}…</div>
-      </div>
-
-      {error && (
-        <div className="bg-red-600/20 border-b border-red-600 px-4 py-2 text-red-400 text-sm">
-          {error}
-        </div>
-      )}
-
+    <div className="h-screen w-screen bg-edu-dark flex flex-col overflow-hidden">
       <LiveKitRoom
         serverUrl={serverUrl}
         token={token}
         connect={true}
         video={true}
         audio={true}
+        options={{ adaptiveStream: true, dynacast: true }}
         onConnected={onConnected}
         onDisconnected={onDisconnected}
         onError={onError}
         className="flex-1 flex flex-col overflow-hidden"
       >
-        <RoomUI sessionId={sessionId} socket={socket} />
+        <InnerRoomUI sessionId={sessionId} socket={socket} />
       </LiveKitRoom>
     </div>
   );
