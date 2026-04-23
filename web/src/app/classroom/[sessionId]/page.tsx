@@ -11,8 +11,7 @@ import Chat from '@/components/classroom/Chat';
 import Timer from '@/components/classroom/Timer';
 import ParticipantGrid from '@/components/classroom/ParticipantGrid';
 import LiveKitRoomWrapper from '@/components/classroom/LiveKitRoom';
-import { Room, Track } from 'livekit-client';
-import { useTracks } from '@livekit/components-react';
+import { Room } from 'livekit-client';
 import axios from 'axios';
 
 type MediaState = {
@@ -224,20 +223,6 @@ export default function ClassroomPage() {
     stopTracking();
     router.push('/dashboard');
   }, [lkRoom, socket, router, stopTracking]);
-
-  // Get tracks from LiveKit room
-  const tracks = useTracks(
-    [
-      { source: Track.Source.Camera, withPlaceholder: true },
-      { source: Track.Source.Microphone, withPlaceholder: false },
-      { source: Track.Source.ScreenShare, withPlaceholder: false },
-    ],
-    { onlySubscribed: false }
-  );
-
-  if (tracks.length === 0) {
-    // console.log('[Classroom] No tracks available');
-  }
 
   // Loading state
   if (loading) {

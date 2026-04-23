@@ -27,6 +27,7 @@ import { AppService } from "./app.service";
     EnrollmentModule,
     SessionModule,
     AnalyticsModule,
+    LivekitModule,
   ],
   controllers: [AppController],
   providers: [AppService],

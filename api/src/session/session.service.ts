@@ -10,7 +10,7 @@ import { randomUUID } from "crypto";
 export class SessionService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async start(tenantId: string, dto: StartSessionDto) {
+  async start(tenantId: string, userId: string, dto: StartSessionDto) {
     const course = await this.prisma.course.findFirst({
       where: { id: dto.courseId, tenantId },
     });
@@ -24,7 +24,7 @@ export class SessionService {
       data: {
         tenantId,
         courseId: dto.courseId,
-        userId: dto.userId,
+        userId,
         classroomCode,
         dwellTime: 0,
       },

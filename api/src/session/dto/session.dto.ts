@@ -1,14 +1,16 @@
-import { IsUUID, IsOptional } from "class-validator";
+import { IsUUID, IsOptional, IsString } from "class-validator";
 
 export class StartSessionDto {
   @IsUUID()
   courseId: string;
 
-  @IsUUID()
-  userId: string;
+  @IsOptional()
+  @IsString()
+  classroomCode?: string;
 
   @IsOptional()
-  classroomCode?: string;
+  @IsString()
+  title?: string;
 }
 
 export class UpdateSessionDto {
