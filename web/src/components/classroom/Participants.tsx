@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Socket } from 'socket.io-client';
 import { useSocket } from '@/lib/socket-context';
+import { Hand, Mic, MicOff, Video, VideoOff, MonitorUp, Crown } from 'lucide-react';
 
 type MediaState = {
   micActive: boolean;
@@ -18,23 +19,32 @@ interface Participant {
   joinedAt?: Date;
   isHost?: boolean;
   media?: MediaState;
+  handRaised?: boolean;
 }
 
 interface ParticipantsPanelProps {
   participants: Participant[];
   currentUserId: string;
   showMediaStatus?: boolean;
+  raisedHands?: Record<string, boolean>;
 }
 
 export default function ParticipantsPanel({
   participants,
   currentUserId,
   showMediaStatus = false,
+  raisedHands: externalRaisedHands,
 }: ParticipantsPanelProps) {
   const { socket } = useSocket();
   const [mediaStates, setMediaStates] = useState<Record<string, MediaState>>({});
+  const [raisedHands, setRaisedHands] = useState<Record<string, boolean>>({});
 
-  // Listen for media updates from other participants
+  // Merge props with internal state
+  const mergedRaisedHands = React.useMemo(() => {
+    return { ...raisedHands, ...(externalRaisedHands || {}) };
+  }, [raisedHands, externalRaisedHands]);
+
+  // Listen for media + hand-raise updates from other participants
   useEffect(() => {
     if (!socket) return;
 
@@ -49,18 +59,24 @@ export default function ParticipantsPanel({
       }));
     };
 
+    const handleHandRaise = (data: any) => {
+      if (!data?.userId) return;
+      setRaisedHands((prev) => ({ ...prev, [data.userId]: data.raised }));
+    };
+
     socket.on('participant-media-update', handleMediaUpdate);
     socket.on('participant-engagement-update', handleMediaUpdate);
+    socket.on('participant-hand-raise', handleHandRaise);
 
     return () => {
       socket.off('participant-media-update', handleMediaUpdate);
       socket.off('participant-engagement-update', handleMediaUpdate);
+      socket.off('participant-hand-raise', handleHandRaise);
     };
   }, [socket]);
 
   const getMediaState = (userId: string) => {
     if (userId === currentUserId) {
-      // Local participant - use actual state from MediaManager
       return mediaStates[userId] || {
         micActive: true,
         cameraActive: false,
@@ -73,6 +89,20 @@ export default function ParticipantsPanel({
       screenShareActive: false,
     };
   };
+
+  // Sort: hand-raised first, then host, then alphabetically
+  const sortedParticipants = React.useMemo(() => {
+    const list = [...participants];
+    list.sort((a, b) => {
+      const aHand = mergedRaisedHands[a.userId] ? 1 : 0;
+      const bHand = mergedRaisedHands[b.userId] ? 1 : 0;
+      if (bHand !== aHand) return bHand - aHand;
+      if (a.isHost && !b.isHost) return -1;
+      if (!a.isHost && b.isHost) return 1;
+      return (a.name || a.userId).localeCompare(b.name || b.userId);
+    });
+    return list;
+  }, [participants, mergedRaisedHands]);
 
   return (
     <div className="border-l border-gray-700 flex flex-col h-full">
@@ -94,15 +124,18 @@ export default function ParticipantsPanel({
           </div>
         ) : (
           <div className="space-y-2">
-            {participants.map((participant) => {
+            {sortedParticipants.map((participant) => {
               const media = getMediaState(participant.userId);
               const isCurrent = participant.userId === currentUserId;
+              const isHandRaised = mergedRaisedHands[participant.userId];
 
               return (
                 <div
                   key={participant.clientId}
                   className={`flex items-center justify-between px-3 py-2 rounded-lg transition-colors ${
-                    isCurrent
+                    isHandRaised
+                      ? 'bg-yellow-500/10 border border-yellow-500/30'
+                      : isCurrent
                       ? 'bg-blue-600/10 border border-blue-500/30'
                       : 'bg-gray-700/50'
                   }`}
@@ -120,44 +153,43 @@ export default function ParticipantsPanel({
                           : participant.status === 'away' ? 'bg-yellow-500'
                           : 'bg-gray-500'
                       }`} />
+                      {/* Hand raise overlay */}
+                      {isHandRaised && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full border-2 border-gray-900 flex items-center justify-center"
+                              title="Hand raised">
+                          <Hand className="w-2.5 h-2.5 text-black" />
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex flex-col min-w-0">
-                      <span className={`text-sm font-medium truncate ${
+                      <span className={`text-sm font-medium truncate flex items-center gap-1.5 ${
                         isCurrent ? 'text-blue-300' : 'text-gray-200'
                       }`}>
                         {participant.name || `User ${participant.userId.slice(0, 6)}`}
-                        {isCurrent && <span className="ml-1 text-xs text-blue-400">(You)</span>}
+                        {isCurrent && <span className="text-xs text-blue-400">(You)</span>}
+                        {isHandRaised && (
+                          <span className="text-yellow-400 text-xs font-medium flex items-center gap-0.5">
+                            <Hand className="w-3 h-3" /> Raised
+                          </span>
+                        )}
                       </span>
                       <div className="flex items-center gap-1 mt-0.5">
                         {participant.isHost && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">Host</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 flex items-center gap-0.5">
+                            <Crown className="w-3 h-3" /> Host
+                          </span>
                         )}
                         {/* Media indicators */}
                         <span title={media.micActive ? 'Mic On' : 'Mic Off'}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={media.micActive ? '#22c55e' : '#ef4444'} strokeWidth="2">
-                            {media.micActive ? (
-                              <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><path d="M19 10v2a7 7 0 0 1-14 0v-2" /></>
-                            ) : (
-                              <><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" /><line x1="1" y1="1" x2="23" y2="23" /></>
-                            )}
-                          </svg>
+                          {media.micActive ? <Mic className="w-3 h-3 text-green-400" /> : <MicOff className="w-3 h-3 text-gray-500" />}
                         </span>
                         <span title={media.cameraActive ? 'Camera On' : 'Camera Off'}>
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={media.cameraActive ? '#22c55e' : '#ef4444'} strokeWidth="2">
-                            {media.cameraActive ? (
-                              <><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></>
-                            ) : (
-                              <><path d="M23 7l-7 5 7 5V7z" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /><line x1="1" y1="1" x2="23" y2="23" /></>
-                            )}
-                          </svg>
+                          {media.cameraActive ? <Video className="w-3 h-3 text-green-400" /> : <VideoOff className="w-3 h-3 text-gray-500" />}
                         </span>
                         {media.screenShareActive && (
                           <span title="Screen Sharing">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="2">
-                              <rect x="2" y="3" width="20" height="14" rx="2" ry="2" />
-                              <path d="M8 21h8" /><path d="M12 17v4" />
-                            </svg>
+                            <MonitorUp className="w-3 h-3 text-blue-400" />
                           </span>
                         )}
                       </div>

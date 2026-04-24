@@ -16,6 +16,8 @@ export default defineConfig({
     launchOptions: {
       args: [
         // Fake media stream for headless testing
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
         '--use-fake-ui-for-media-stream',
         '--use-fake-device-for-media-stream',
         '--autoplay-policy=no-user-gesture-required',

@@ -54,10 +54,14 @@ function SafeParticipantTile({
     !videoPub.isMuted &&
     !!videoPub.track;
   const micPub = participant.getTrackPublication(Track.Source.Microphone);
+  // For local: audio track may be enabled even if not "subscribed" to ourselves
+  // For remote: check both subscribed AND has actual track
   const isMicOn =
     !!micPub &&
-    (participant.isLocal ? micPub.isEnabled : micPub.isSubscribed) &&
-    !micPub.isMuted;
+    (participant.isLocal ? (micPub.isEnabled && !!micPub.track) : micPub.isSubscribed && !micPub.isMuted);
+
+  // Audio ref
+  const audioRef = React.useRef<HTMLAudioElement>(null);
 
   React.useEffect(() => {
     const videoEl = videoRef.current;
@@ -69,8 +73,24 @@ function SafeParticipantTile({
     }
   }, [isVideoOn, videoPub]);
 
+  // Attach audio track separately for proper audio playback
+  React.useEffect(() => {
+    const audioEl = audioRef.current;
+    const audioTrack = micPub?.track;
+    if (audioEl && audioTrack && !participant.isLocal) {
+      audioTrack.attach(audioEl);
+      audioEl.muted = false;
+      audioEl.play().catch(() => {});
+      return () => {
+        audioTrack?.detach(audioEl);
+      };
+    }
+  }, [micPub, participant.isLocal]);
+
   return (
     <div className="h-full w-full relative">
+      {/* Hidden audio element for proper remote audio playback */}
+      <audio ref={audioRef} autoPlay playsInline muted={participant.isLocal} />
       {isVideoOn ? (
         <video
           ref={videoRef}

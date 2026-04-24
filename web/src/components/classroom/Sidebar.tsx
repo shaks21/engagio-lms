@@ -413,7 +413,7 @@ export default function Sidebar({
                 onTabChange('chat');
                 onResetChatCount?.();
               }}
-              badge={tab !== 'chat' ? unreadChatCount : 0}
+              badge={tab !== 'chat' ? (unreadChatCount > 0 ? unreadChatCount : undefined) : undefined}
             />
             <TabButton
               id="participants"

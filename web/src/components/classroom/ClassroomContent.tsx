@@ -235,17 +235,18 @@ function InnerRoomUI({
   }, []);
 
   return (
-    <>
-      {/* Floating Header */}
-      <GlassHeader
-        connected={room.state === 'connected'}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        onLeave={handleLeave}
-        participantCount={room.numParticipants}
-      />
-
-      <div className="flex-1 flex overflow-hidden relative">
+      <>
+      {/* Floating Header — sticky to avoid overlapping sidebar */}
+      <div className="sticky top-0 z-50">
+        <GlassHeader
+          connected={room.state === 'connected'}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onLeave={handleLeave}
+          participantCount={room.numParticipants}
+        />
+      </div>
+      <div className="flex-1 flex overflow-hidden relative md:pt-14">
         {/* ── Sidebar ── */}
         {/* Desktop: inline flex; Mobile: hidden by default, conditionally shown */}
         <div className={`flex-shrink-0 hidden md:flex h-full ${sidebarOpen ? '' : 'w-0'}`}>
@@ -314,6 +315,8 @@ function InnerRoomUI({
           onToast={addToast}
           onPinLocal={() => handlePinParticipant(room.localParticipant.sid)}
           isLocalPinned={pinnedSid === room.localParticipant.sid}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
       </div>
 

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { GraduationCap, Users, Clock, Circle, Settings, Monitor, Video } from 'lucide-react';
+import { GraduationCap, Users, Clock, Circle, Monitor, Video } from 'lucide-react';
 import Timer from './Timer';
 
 export type ViewMode = 'focus' | 'grid' | 'immersive';
@@ -107,10 +107,6 @@ export default function GlassHeader({
           className="px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-medium transition-colors flex items-center gap-1.5 ml-2"
         >
           Leave
-        </button>
-
-        <button className="p-2 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition-colors ml-1">
-          <Settings className="w-5 h-5" />
         </button>
       </div>
     </header>
