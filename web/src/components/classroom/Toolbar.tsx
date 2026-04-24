@@ -103,8 +103,7 @@ export default function Toolbar({
   isLocalPinned = false,
 }: ToolbarProps) {
   return (
-    <div className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-[60]">
-      <div className="glass-panel rounded-2xl px-2.5 sm:px-4 py-2 sm:py-3 flex items-center gap-1.5 sm:gap-2 shadow-2xl shadow-black/50">
+    <div className="glass-panel rounded-2xl px-2.5 sm:px-4 py-2 sm:py-3 flex items-center gap-1.5 sm:gap-2 shadow-2xl shadow-black/50">
         {/* ── Media Controls ── */}
         <div className="flex items-center gap-1.5 sm:gap-2 pr-2 sm:pr-3 border-r border-gray-700">
           <TooltipButton
@@ -117,7 +116,7 @@ export default function Toolbar({
               });
             }}
             active={!micMuted}
-            activeClass="bg-gray-700 hover:bg-gray-600 text-white"
+            activeClass="bg-green-600 hover:bg-green-700 text-white animate-pulse"
             inactiveClass="bg-edu-danger hover:bg-red-700 text-white"
             tooltip={micMuted ? 'Unmute (Ctrl+D)' : 'Mute (Ctrl+D)'}
           >
@@ -134,7 +133,7 @@ export default function Toolbar({
               });
             }}
             active={!cameraOff}
-            activeClass="bg-gray-700 hover:bg-gray-600 text-white"
+            activeClass="bg-green-600 hover:bg-green-700 text-white animate-pulse"
             inactiveClass="bg-edu-danger hover:bg-red-700 text-white"
             tooltip={cameraOff ? 'Start Video (Ctrl+E)' : 'Stop Video (Ctrl+E)'}
           >
@@ -238,6 +237,5 @@ export default function Toolbar({
           </button>
         </div>
       </div>
-    </div>
   );
 }

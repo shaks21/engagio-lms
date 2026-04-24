@@ -126,8 +126,10 @@ function InnerRoomUI({
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chat');
   const [pinnedSid, setPinnedSid] = useState<string | undefined>(undefined);
 
-  // Other state
   const [handRaised, setHandRaised] = useState(false);
+
+  // Track hand-raised state for all participants
+  const [raisedHands, setRaisedHands] = useState<Record<string, boolean>>({});
 
   // Chat toast
   const [unreadChatCount, setUnreadChatCount] = useState(0);
@@ -187,12 +189,27 @@ function InnerRoomUI({
   const handleToggleHandRaise = useCallback(() => {
     const next = !handRaised;
     setHandRaised(next);
+    socket?.emit('engagementEvent', {
+      type: 'HAND_RAISE',
+      payload: { raised: next },
+    });
     addToast({
       id: Date.now().toString(),
       message: next ? 'Hand raised' : 'Hand lowered',
       type: 'info',
     });
-  }, [handRaised, addToast]);
+  }, [handRaised, socket, addToast]);
+
+  // Listen for hand raises from other participants
+  useEffect(() => {
+    if (!socket) return;
+    const onHandRaise = (data: any) => {
+      if (!data?.clientId) return;
+      setRaisedHands((prev) => ({ ...prev, [data.clientId]: data.raised }));
+    };
+    socket.on('participant-hand-raise', onHandRaise);
+    return () => { socket.off('participant-hand-raise', onHandRaise); };
+  }, [socket]);
 
   const handleToggleChat = useCallback(() => {
     setSidebarTab('chat');
@@ -224,8 +241,8 @@ function InnerRoomUI({
     <>
       <div className="flex-1 flex overflow-hidden relative">
         {/* Main Stage */}
-        <main className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 ${
-          sidebarOpen ? 'mr-0' : ''
+        <main className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 relative ${
+          sidebarOpen ? 'mr-0 md:mr-80' : ''
         }`}>
           <FocusLayout
             viewMode={viewMode}
@@ -234,21 +251,24 @@ function InnerRoomUI({
           />
         </main>
 
-        {/* Sidebar */}
-        <Sidebar
-          open={sidebarOpen}
-          tab={sidebarTab}
-          onTabChange={setSidebarTab}
-          onClose={() => setSidebarOpen(false)}
-          sessionId={sessionId}
-          socket={socket}
-          userId={userId || ''}
-          userName={userName || user?.email || 'Unknown'}
-          unreadChatCount={unreadChatCount}
-          onResetChatCount={() => setUnreadChatCount(0)}
-          pinnedParticipantSid={pinnedSid}
-          onPinParticipant={handlePinParticipant}
-        />
+        {/* Sidebar — desktop always visible, mobile conditional */}
+        <div className={`${sidebarOpen ? 'block' : 'hidden'} md:block flex-shrink-0`}>
+          <Sidebar
+            open={sidebarOpen}
+            tab={sidebarTab}
+            onTabChange={setSidebarTab}
+            onClose={() => setSidebarOpen(false)}
+            sessionId={sessionId}
+            socket={socket}
+            userId={userId || ''}
+            userName={userName || user?.email || 'Unknown'}
+            unreadChatCount={unreadChatCount}
+            onResetChatCount={() => setUnreadChatCount(0)}
+            pinnedParticipantSid={pinnedSid}
+            onPinParticipant={handlePinParticipant}
+            raisedHands={raisedHands}
+          />
+        </div>
       </div>
 
       {/* Floating Header */}
@@ -260,24 +280,28 @@ function InnerRoomUI({
         participantCount={room.numParticipants}
       />
 
-      {/* Floating Toolbar */}
-      <Toolbar
-        micMuted={micMuted}
-        cameraOff={cameraOff}
-        handRaised={handRaised}
-        screenShareActive={screenShareActive}
-        unreadChatCount={unreadChatCount}
-        onToggleMic={handleToggleMic}
-        onToggleCamera={handleToggleCamera}
-        onToggleScreenShare={handleToggleScreenShare}
-        onToggleHandRaise={handleToggleHandRaise}
-        onToggleChat={handleToggleChat}
-        onToggleSidebar={handleToggleSidebar}
-        onLeave={handleLeave}
-        onToast={addToast}
-        onPinLocal={() => handlePinParticipant(room.localParticipant.sid)}
-        isLocalPinned={pinnedSid === room.localParticipant.sid}
-      />
+      {/* Toolbar — positioned within main content area, not fixed viewport-center */}
+      <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-[60] transition-all duration-300 ${
+        sidebarOpen ? 'md:left-[calc(50%-10rem)]' : ''
+      }`}>
+        <Toolbar
+          micMuted={micMuted}
+          cameraOff={cameraOff}
+          handRaised={handRaised}
+          screenShareActive={screenShareActive}
+          unreadChatCount={unreadChatCount}
+          onToggleMic={handleToggleMic}
+          onToggleCamera={handleToggleCamera}
+          onToggleScreenShare={handleToggleScreenShare}
+          onToggleHandRaise={handleToggleHandRaise}
+          onToggleChat={handleToggleChat}
+          onToggleSidebar={handleToggleSidebar}
+          onLeave={handleLeave}
+          onToast={addToast}
+          onPinLocal={() => handlePinParticipant(room.localParticipant.sid)}
+          isLocalPinned={pinnedSid === room.localParticipant.sid}
+        />
+      </div>
 
       {/* Toast notifications */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />

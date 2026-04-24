@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Mic, MicOff, Video, VideoOff, ArrowRight } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, ArrowRight, Volume2 } from 'lucide-react';
 
 export interface PreJoinConfig {
   micEnabled: boolean;
@@ -27,6 +27,12 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Mic test state
+  const [micLevel, setMicLevel] = useState(0);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const micAudioCtxRef = useRef<AudioContext | null>(null);
+  const micRafRef = useRef<number>(0);
 
   // Check available devices
   useEffect(() => {
@@ -90,15 +96,53 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
     }
   }, [previewStream]);
 
-  // Toggle preview when enabling mic
+  // Toggle preview when enabling mic + setup mic test visualizer
   useEffect(() => {
-    if (!micEnabled || !micAvailable) return;
-    // Just verify mic works, don't attach
-    let ts: MediaStream | null = null;
+    if (!micEnabled || !micAvailable) {
+      if (micRafRef.current) cancelAnimationFrame(micRafRef.current);
+      micAnalyserRef.current?.disconnect();
+      micAudioCtxRef.current?.close().catch(() => {});
+      micAnalyserRef.current = null;
+      micAudioCtxRef.current = null;
+      setMicLevel(0);
+      return;
+    }
+
+    let cancelled = false;
+    let stream: MediaStream | null = null;
+
     getMediaDeviceStream({ audio: true, video: false })
-      .then((s) => { ts = s; ts.getTracks().forEach((t) => t.stop()); })
+      .then((s) => {
+        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
+        stream = s;
+        const ctx = new AudioContext();
+        const src = ctx.createMediaStreamSource(s);
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 64;
+        analyser.smoothingTimeConstant = 0.8;
+        src.connect(analyser);
+        micAudioCtxRef.current = ctx;
+        micAnalyserRef.current = analyser;
+
+        const dataArr = new Uint8Array(analyser.frequencyBinCount);
+        const update = () => {
+          if (!micAnalyserRef.current) return;
+          micAnalyserRef.current.getByteFrequencyData(dataArr);
+          const avg = dataArr.reduce((a, b) => a + b, 0) / dataArr.length;
+          setMicLevel(avg);
+          micRafRef.current = requestAnimationFrame(update);
+        };
+        micRafRef.current = requestAnimationFrame(update);
+      })
       .catch(() => setError('Unable to access microphone'));
-    return () => { ts?.getTracks().forEach((t) => t.stop()); };
+
+    return () => {
+      cancelled = true;
+      if (micRafRef.current) cancelAnimationFrame(micRafRef.current);
+      micAnalyserRef.current?.disconnect();
+      micAudioCtxRef.current?.close().catch(() => {});
+      stream?.getTracks().forEach((t) => t.stop());
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [micEnabled, micAvailable]);
 
@@ -122,7 +166,7 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
         </div>
 
         {/* Camera preview */}
-        <div className="aspect-video bg-gray-900 relative">
+        <div className="aspect-video bg-gray-900 relative rounded-t-none overflow-hidden">
           {cameraEnabled && previewStream ? (
             <video
               ref={videoRef}
@@ -141,42 +185,70 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
               </div>
             </div>
           )}
-
-          {/* Preview overlay controls */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-3">
-            <button
-              onClick={() => setMicEnabled((v) => !v)}
-              className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${
-                micEnabled
-                  ? 'bg-gray-700/90 text-white'
-                  : 'bg-edu-danger text-white'
-              }`}
-              aria-label={micEnabled ? 'Mute' : 'Unmute'}
-            >
-              {micEnabled && micAvailable ? (
-                <Mic className="w-5 h-5" />
-              ) : (
-                <MicOff className="w-5 h-5" />
-              )}
-            </button>
-
-            <button
-              onClick={() => setCameraEnabled((v) => !v)}
-              className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${
-                cameraEnabled
-                  ? 'bg-gray-700/90 text-white'
-                  : 'bg-edu-danger text-white'
-              }`}
-              aria-label={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
-            >
-              {cameraEnabled && cameraAvailable ? (
-                <Video className="w-5 h-5" />
-              ) : (
-                <VideoOff className="w-5 h-5" />
-              )}
-            </button>
-          </div>
         </div>
+
+        {/* Controls row — OUTSIDE video so they don't cover it */}
+        <div className="p-4 pb-2 flex items-center justify-center gap-3">
+          <button
+            onClick={() => setMicEnabled((v) => !v)}
+            className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${
+              micEnabled
+                ? 'bg-gray-700/90 text-white'
+                : 'bg-edu-danger text-white'
+            }`}
+            aria-label={micEnabled ? 'Mute' : 'Unmute'}
+          >
+            {micEnabled && micAvailable ? (
+              <Mic className="w-5 h-5" />
+            ) : (
+              <MicOff className="w-5 h-5" />
+            )}
+          </button>
+
+          <button
+            onClick={() => setCameraEnabled((v) => !v)}
+            className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${
+              cameraEnabled
+                ? 'bg-gray-700/90 text-white'
+                : 'bg-edu-danger text-white'
+            }`}
+            aria-label={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
+          >
+            {cameraEnabled && cameraAvailable ? (
+              <Video className="w-5 h-5" />
+            ) : (
+              <VideoOff className="w-5 h-5" />
+            )}
+          </button>
+        </div>
+
+        {/* Mic test visualizer */}
+        {micEnabled && micAvailable && (
+          <div className="px-6 pb-3">
+            <div className="flex items-center gap-2 mb-1">
+              <Volume2 className="w-3.5 h-3.5 text-gray-400" />
+              <span className="text-[11px] text-gray-400 uppercase tracking-wider font-medium">Mic Test</span>
+            </div>
+            <div className="h-8 flex items-end gap-0.5">
+              {Array.from({ length: 16 }).map((_, i) => {
+                const threshold = (i / 16) * 255;
+                const filled = micLevel >= threshold;
+                return (
+                  <div
+                    key={i}
+                    className={`flex-1 rounded-sm transition-all duration-75 ${
+                      filled ? 'bg-green-500' : 'bg-gray-700'
+                    }`}
+                    style={{
+                      height: `${20 + Math.random() * 60}%`,
+                      opacity: filled ? 0.6 + (i / 16) * 0.4 : 0.3,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="p-4 space-y-3">

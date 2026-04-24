@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   useParticipants,
   useLocalParticipant,
@@ -38,6 +38,7 @@ interface SidebarProps {
   onResetChatCount?: () => void;
   pinnedParticipantSid?: string;
   onPinParticipant?: (sid: string) => void;
+  raisedHands?: Record<string, boolean>;
 }
 
 /* ─── Live participant row with media indicators ─── */
@@ -116,10 +117,12 @@ function ParticipantsPanel({
   userId,
   pinnedSid,
   onPinParticipant,
+  raisedHands,
 }: {
   userId: string;
   pinnedSid?: string;
   onPinParticipant?: (sid: string) => void;
+  raisedHands?: Record<string, boolean>;
 }) {
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
@@ -145,6 +148,7 @@ function ParticipantsPanel({
             isLocal={p.sid === localParticipant?.sid}
             isPinned={p.sid === pinnedSid}
             onClick={() => onPinParticipant?.(p.sid)}
+            isHandRaised={raisedHands?.[p.sid]}
           />
         ))
       )}
@@ -152,20 +156,162 @@ function ParticipantsPanel({
   );
 }
 
-/* ─── Q&A stub ─── */
-function QAPanel() {
+/* ─── Q&A functional panel with socket ─── */
+function QAPanel({
+  socket,
+  sessionId,
+  userId,
+  userName,
+}: {
+  socket: any;
+  sessionId: string;
+  userId: string;
+  userName: string;
+}) {
+  const [questions, setQuestions] = useState<
+    { id: string; userId: string; userName: string; text: string; votes: number; voted: boolean; answered: boolean }[]
+  >([]);
+  const [text, setText] = useState('');
+
+  useEffect(() => {
+    if (!socket) return;
+    const onQuestion = (data: any) => {
+      if (!data?.id) return;
+      setQuestions((prev) => {
+        if (prev.some((q) => q.id === data.id)) return prev;
+        return [
+          ...prev,
+          {
+            id: data.id,
+            userId: data.userId,
+            userName: data.userName || data.userId?.slice(0, 8) || 'User',
+            text: data.text || '',
+            votes: data.votes || 0,
+            voted: false,
+            answered: data.answered || false,
+          },
+        ];
+      });
+    };
+    const onVote = (data: any) => {
+      setQuestions((prev) =>
+        prev.map((q) => (q.id === data?.id ? { ...q, votes: data.votes ?? q.votes } : q))
+      );
+    };
+    const onAnswer = (data: any) => {
+      setQuestions((prev) =>
+        prev.map((q) => (q.id === data?.id ? { ...q, answered: true } : q))
+      );
+    };
+    socket.on('classroom-question', onQuestion);
+    socket.on('classroom-question-vote', onVote);
+    socket.on('classroom-question-answered', onAnswer);
+    return () => {
+      socket.off('classroom-question', onQuestion);
+      socket.off('classroom-question-vote', onVote);
+      socket.off('classroom-question-answered', onAnswer);
+    };
+  }, [socket]);
+
+  const ask = () => {
+    if (!text.trim() || !socket) return;
+    const id = Date.now().toString();
+    socket.emit('engagementEvent', {
+      type: 'QUESTION',
+      payload: { id, text: text.trim(), sessionId },
+    });
+    setQuestions((prev) => [
+      ...prev,
+      {
+        id,
+        userId,
+        userName: userName || 'You',
+        text: text.trim(),
+        votes: 0,
+        voted: false,
+        answered: false,
+      },
+    ]);
+    setText('');
+  };
+
+  const vote = (id: string) => {
+    if (!socket) return;
+    socket.emit('engagementEvent', {
+      type: 'QUESTION_VOTE',
+      payload: { id, sessionId },
+    });
+    setQuestions((prev) =>
+      prev.map((q) =>
+        q.id === id && !q.voted
+          ? { ...q, votes: q.votes + 1, voted: true }
+          : q
+      )
+    );
+  };
+
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="p-3 border-b border-gray-800">
-        <button className="w-full py-2 bg-engagio-600 hover:bg-engagio-700 rounded-lg text-sm font-medium transition-colors text-white flex items-center justify-center gap-2">
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          Ask a Question
-        </button>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && ask()}
+            placeholder="Type your question..."
+            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-engagio-500"
+          />
+          <button
+            onClick={ask}
+            disabled={!text.trim()}
+            className="bg-engagio-600 hover:bg-engagio-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-3 py-2 text-white text-sm font-medium transition-colors"
+          >
+            Ask
+          </button>
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide text-center text-gray-500">
-        <p className="text-sm mt-8">No questions yet.</p>
+      <div className="flex-1 overflow-y-auto scrollbar-hide">
+        {questions.length === 0 ? (
+          <div className="text-center text-gray-500 text-sm py-10">
+            <p className="mt-8">No questions yet.</p>
+            <p className="text-xs mt-1">Be the first to ask a question!</p>
+          </div>
+        ) : (
+          <div className="p-2 space-y-2">
+            {questions.map((q) => (
+              <div
+                key={q.id}
+                className={`p-3 rounded-lg border ${
+                  q.answered
+                    ? 'border-green-500/30 bg-green-900/10'
+                    : 'border-gray-700 bg-gray-800/50'
+                }`}
+              >
+                <p className="text-sm text-white leading-relaxed">{q.text}</p>
+                <div className="flex items-center justify-between mt-2">
+                  <span className="text-[11px] text-gray-500">{q.userName}</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => vote(q.id)}
+                      disabled={q.voted}
+                      className={`text-xs px-2 py-1 rounded-md transition-colors ${
+                        q.voted
+                          ? 'bg-engagio-600 text-white'
+                          : 'bg-gray-700 text-gray-300 hover:text-white'
+                      }`}
+                    >
+                      ▲ {q.votes}
+                    </button>
+                    {q.answered && (
+                      <span className="text-[11px] text-green-400 font-medium">Answered ✓</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -220,6 +366,7 @@ export default function Sidebar({
   onResetChatCount,
   pinnedParticipantSid,
   onPinParticipant,
+  raisedHands,
 }: SidebarProps) {
   return (
     <aside
@@ -285,10 +432,11 @@ export default function Sidebar({
               userId={userId}
               pinnedSid={pinnedParticipantSid}
               onPinParticipant={onPinParticipant}
+              raisedHands={raisedHands}
             />
           )}
 
-          {tab === 'qa' && <QAPanel />}
+          {tab === 'qa' && <QAPanel socket={socket} sessionId={sessionId} userId={userId} userName={userName} />}
         </div>
       </div>
     </aside>

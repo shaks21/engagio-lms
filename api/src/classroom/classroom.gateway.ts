@@ -395,6 +395,31 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
             (data.payload as { text?: string; message?: string })?.message || "",
         timestamp: new Date().toISOString(),
       });
+    } else if (data.type === "QUESTION") {
+      this.server.to(sessionSocket).emit("classroom-question", {
+        id: (data.payload as { id?: string })?.id || Date.now().toString(),
+        userId,
+        clientId: stableClientId || client.id,
+        userName: userName || userId?.slice(0, 8) || "User",
+        text: (data.payload as { text?: string })?.text || "",
+        votes: 0,
+        answered: false,
+        timestamp: new Date().toISOString(),
+      });
+    } else if (data.type === "QUESTION_VOTE") {
+      this.server.to(sessionSocket).emit("classroom-question-vote", {
+        id: (data.payload as { id?: string })?.id || "",
+        userId,
+        votes: 1,
+        timestamp: new Date().toISOString(),
+      });
+    } else if (data.type === "HAND_RAISE") {
+      this.server.to(sessionSocket).emit("participant-hand-raise", {
+        userId,
+        clientId: stableClientId || client.id,
+        raised: (data.payload as { raised?: boolean })?.raised ?? true,
+        timestamp: new Date().toISOString(),
+      });
     } else if (data.type === "MOUSE_TRACK") {
       this.server.to(sessionSocket).emit("participant-mouse-move", {
         userId,

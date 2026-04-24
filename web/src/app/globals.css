@@ -314,14 +314,14 @@ body {
 /* ========== Dark table utilities ========== */
 /* ========== Mobile responsive classroom ========== */
 @media (max-width: 640px) {
-  /* Sidebar becomes full overlay on mobile */
+  /* Sidebar becomes overlay on mobile, respects w-0/w-72 */
   .sidebar-panel {
     position: fixed !important;
     right: 0 !important;
     top: 56px;
     bottom: 0;
     z-index: 55;
-    width: 100% !important;
+    max-width: 320px !important;
   }
   .sidebar-panel > div {
     width: 100% !important;
