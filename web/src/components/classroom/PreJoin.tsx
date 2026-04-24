@@ -151,6 +151,7 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
     if (previewStream) {
       previewStream.getTracks().forEach((t) => t.stop());
     }
+    setLoading(true);
     onJoin({ micEnabled, cameraEnabled });
   }, [micEnabled, cameraEnabled, previewStream, onJoin]);
 
@@ -166,7 +167,7 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
         </div>
 
         {/* Camera preview */}
-        <div className="aspect-video bg-gray-900 relative rounded-t-none overflow-hidden">
+        <div className="aspect-video bg-gray-900 relative overflow-hidden">
           {cameraEnabled && previewStream ? (
             <video
               ref={videoRef}
@@ -187,61 +188,68 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
           )}
         </div>
 
-        {/* Controls row — OUTSIDE video so they don't cover it */}
-        <div className="p-4 pb-2 flex items-center justify-center gap-3">
+        {/* Controls row — OUTSIDE video preview so buttons don't cover it */}
+        <div className="px-6 pt-5 pb-2 flex items-center justify-center gap-4">
           <button
             onClick={() => setMicEnabled((v) => !v)}
-            className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all scale-100 hover:scale-105 active:scale-95 ${
               micEnabled
-                ? 'bg-gray-700/90 text-white'
-                : 'bg-edu-danger text-white'
+                ? 'bg-green-600 hover:bg-green-700 text-white animate-mic-active'
+                : 'bg-edu-danger hover:bg-red-700 text-white'
             }`}
             aria-label={micEnabled ? 'Mute' : 'Unmute'}
           >
             {micEnabled && micAvailable ? (
-              <Mic className="w-5 h-5" />
+              <Mic className="w-6 h-6" />
             ) : (
-              <MicOff className="w-5 h-5" />
+              <MicOff className="w-6 h-6" />
             )}
           </button>
 
           <button
             onClick={() => setCameraEnabled((v) => !v)}
-            className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg transition-all ${
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all scale-100 hover:scale-105 active:scale-95 ${
               cameraEnabled
-                ? 'bg-gray-700/90 text-white'
-                : 'bg-edu-danger text-white'
+                ? 'bg-green-600 hover:bg-green-700 text-white animate-camera-active'
+                : 'bg-edu-danger hover:bg-red-700 text-white'
             }`}
             aria-label={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
           >
             {cameraEnabled && cameraAvailable ? (
-              <Video className="w-5 h-5" />
+              <Video className="w-6 h-6" />
             ) : (
-              <VideoOff className="w-5 h-5" />
+              <VideoOff className="w-6 h-6" />
             )}
           </button>
         </div>
 
         {/* Mic test visualizer */}
         {micEnabled && micAvailable && (
-          <div className="px-6 pb-3">
-            <div className="flex items-center gap-2 mb-1">
+          <div className="px-6 pb-4">
+            <div className="flex items-center gap-2 mb-2">
               <Volume2 className="w-3.5 h-3.5 text-gray-400" />
               <span className="text-[11px] text-gray-400 uppercase tracking-wider font-medium">Mic Test</span>
+              <span className="text-[11px] text-gray-500 ml-auto">{Math.round(micLevel / 2.55)}% input</span>
             </div>
-            <div className="h-8 flex items-end gap-0.5">
-              {Array.from({ length: 16 }).map((_, i) => {
-                const threshold = (i / 16) * 255;
+            <div className="h-8 flex items-end gap-[2px]">
+              {Array.from({ length: 20 }).map((_, i) => {
+                const threshold = (i / 20) * 255;
                 const filled = micLevel >= threshold;
                 return (
                   <div
                     key={i}
                     className={`flex-1 rounded-sm transition-all duration-75 ${
-                      filled ? 'bg-green-500' : 'bg-gray-700'
+                      filled
+                        ? i > 15
+                          ? 'bg-red-400'
+                          : i > 10
+                            ? 'bg-yellow-400'
+                            : 'bg-green-500'
+                        : 'bg-gray-700'
                     }`}
                     style={{
                       height: `${20 + Math.random() * 60}%`,
-                      opacity: filled ? 0.6 + (i / 16) * 0.4 : 0.3,
+                      opacity: filled ? 0.8 + (i / 20) * 0.2 : 0.3,
                     }}
                   />
                 );
@@ -251,7 +259,7 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
         )}
 
         {/* Footer */}
-        <div className="p-4 space-y-3">
+        <div className="px-6 pb-6 pt-2 space-y-3">
           {error && (
             <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-3 py-2 rounded-lg text-sm">
               {error}

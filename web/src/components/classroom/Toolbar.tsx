@@ -16,7 +16,6 @@ import {
   Pin,
 } from 'lucide-react';
 import { useRoomContext } from '@livekit/components-react';
-import type { Participant } from 'livekit-client';
 
 export interface Toast {
   id: string;
@@ -51,6 +50,7 @@ function TooltipButton({
   inactiveClass = '',
   tooltip,
   badge,
+  flash = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
@@ -59,6 +59,7 @@ function TooltipButton({
   inactiveClass?: string;
   tooltip: string;
   badge?: React.ReactNode;
+  flash?: boolean;
 }) {
   const [showTip, setShowTip] = useState(false);
 
@@ -68,8 +69,8 @@ function TooltipButton({
       onMouseEnter={() => setShowTip(true)}
       onMouseLeave={() => setShowTip(false)}
       className={`control-btn group relative p-2.5 sm:p-3 rounded-xl transition-all ${
-        active ? activeClass : inactiveClass
-      }`}
+        flash ? 'animate-btn-flash' : ''
+      } ${active ? activeClass : inactiveClass}`}
       aria-label={tooltip}
     >
       {children}
@@ -102,6 +103,10 @@ export default function Toolbar({
   onPinLocal,
   isLocalPinned = false,
 }: ToolbarProps) {
+  /* Flash animation: active media buttons pulse green */
+  const micFlashing = !micMuted;
+  const camFlashing = !cameraOff;
+
   return (
     <div className="glass-panel rounded-2xl px-2.5 sm:px-4 py-2 sm:py-3 flex items-center gap-1.5 sm:gap-2 shadow-2xl shadow-black/50">
         {/* ── Media Controls ── */}
@@ -116,7 +121,8 @@ export default function Toolbar({
               });
             }}
             active={!micMuted}
-            activeClass="bg-green-600 hover:bg-green-700 text-white animate-pulse"
+            flash={micFlashing}
+            activeClass="bg-green-600 hover:bg-green-700 text-white ring-2 ring-green-400/50"
             inactiveClass="bg-edu-danger hover:bg-red-700 text-white"
             tooltip={micMuted ? 'Unmute (Ctrl+D)' : 'Mute (Ctrl+D)'}
           >
@@ -133,7 +139,8 @@ export default function Toolbar({
               });
             }}
             active={!cameraOff}
-            activeClass="bg-green-600 hover:bg-green-700 text-white animate-pulse"
+            flash={camFlashing}
+            activeClass="bg-green-600 hover:bg-green-700 text-white ring-2 ring-green-400/50"
             inactiveClass="bg-edu-danger hover:bg-red-700 text-white"
             tooltip={cameraOff ? 'Start Video (Ctrl+E)' : 'Stop Video (Ctrl+E)'}
           >
@@ -143,7 +150,8 @@ export default function Toolbar({
           <TooltipButton
             onClick={onToggleScreenShare}
             active={screenShareActive}
-            activeClass="bg-green-600 hover:bg-green-700 text-white"
+            flash={screenShareActive}
+            activeClass="bg-green-600 hover:bg-green-700 text-white ring-2 ring-green-400/50"
             inactiveClass="bg-gray-700 hover:bg-gray-600 text-white"
             tooltip="Share Screen"
           >
@@ -168,7 +176,7 @@ export default function Toolbar({
           <TooltipButton
             onClick={onToggleHandRaise}
             active={handRaised}
-            activeClass="bg-yellow-500/20 text-yellow-400"
+            activeClass="bg-yellow-500/20 text-yellow-400 ring-2 ring-yellow-400/50"
             inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
             tooltip="Raise Hand (Ctrl+R)"
             badge={

@@ -184,3 +184,31 @@ export async function getCourseAnalytics(courseId: string): Promise<CourseAnalyt
   const { data } = await api.get<CourseAnalytics | null>(`/analytics/course/${courseId}`);
   return data;
 }
+
+// === Live Engagement Scores ===
+export interface LiveScore {
+  userId: string;
+  email: string;
+  score: number;
+  color: string;
+}
+
+export async function getLiveScores(sessionId: string): Promise<LiveScore[]> {
+  const { data } = await api.get<LiveScore[]>(`/analytics/session/${sessionId}/live-scores`);
+  return data;
+}
+
+export interface ScoreHistoryPoint {
+  time: string;
+  score: number;
+}
+
+export interface SessionScoreHistory {
+  classPulse: ScoreHistoryPoint[];
+  byUser: Record<string, { email: string; history: ScoreHistoryPoint[] }>;
+}
+
+export async function getSessionScoreHistory(sessionId: string): Promise<SessionScoreHistory> {
+  const { data } = await api.get<SessionScoreHistory>(`/analytics/session/${sessionId}/history`);
+  return data;
+}

@@ -227,6 +227,35 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+/* ── Green flashing button animation ── */
+@keyframes btn-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(34, 197, 94, 0); }
+}
+
+.animate-btn-flash {
+  animation: btn-flash 2s ease-in-out infinite;
+}
+
+/* ── Pre-join mic/camera active pulse ── */
+@keyframes mic-active {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+}
+
+.animate-mic-active {
+  animation: mic-active 2s ease-in-out infinite;
+}
+
+@keyframes camera-active {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5); }
+  50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(34, 197, 94, 0); }
+}
+
+.animate-camera-active {
+  animation: camera-active 2s ease-in-out infinite;
+}
+
 .glass-panel-hover:hover {
   background: rgba(15, 23, 42, 0.92);
   border-color: rgba(255, 255, 255, 0.2);
@@ -312,7 +341,22 @@ body {
 }
 
 /* ========== Dark table utilities ========== */
+
 /* ========== Mobile responsive classroom ========== */
+/* Mobile sidebar overlay with backdrop */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 50;
+}
+
+@supports (backdrop-filter: blur(4px)) {
+  .sidebar-backdrop {
+    backdrop-filter: blur(4px);
+  }
+}
+
 @media (max-width: 640px) {
   /* Sidebar becomes overlay on mobile, respects w-0/w-72 */
   .sidebar-panel {
@@ -322,9 +366,50 @@ body {
     bottom: 0;
     z-index: 55;
     max-width: 320px !important;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.5);
   }
   .sidebar-panel > div {
     width: 100% !important;
+  }
+  /* Mobile: toolbar fixed at bottom, full width */
+  .toolbar-container {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    z-index: 60 !important;
+    transform: none !important;
+    width: 100% !important;
+    border-radius: 0 !important;
+    padding: 0.5rem 0.5rem calc(0.5rem + env(safe-area-inset-bottom, 0px)) !important;
+    background: rgba(11, 15, 26, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+  .toolbar-container .glass-panel {
+    border-radius: 0 !important;
+    border: none !important;
+    background: transparent !important;
+    width: 100% !important;
+    justify-content: center !important;
+  }
+  .toolbar-container .control-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Desktop: sidebar inline, toolbar on main panel */
+@media (min-width: 641px) {
+  .toolbar-container {
+    position: absolute !important;
+    bottom: 1rem !important;
+    left: 50% !important;
+    right: auto !important;
+    top: auto !important;
+    transform: translateX(-50%) !important;
+    z-index: 50 !important;
+    width: auto !important;
   }
 }
 
@@ -342,7 +427,7 @@ body {
   }
 }
 
-/* Mobile toolbar */
+/* Mobile control-btn sizing */
 @media (max-width: 640px) {
   .control-btn {
     padding: 0.5rem;

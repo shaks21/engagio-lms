@@ -246,8 +246,9 @@ function InnerRoomUI({
       />
 
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Sidebar — desktop always visible, mobile conditional */}
-        <div className={`${sidebarOpen ? 'flex' : 'hidden'} flex-shrink-0 md:flex z-40`}>
+        {/* ── Sidebar ── */}
+        {/* Desktop: inline flex; Mobile: hidden by default, conditionally shown */}
+        <div className={`flex-shrink-0 hidden md:flex h-full ${sidebarOpen ? '' : 'w-0'}`}>
           <Sidebar
             open={sidebarOpen}
             tab={sidebarTab}
@@ -265,39 +266,55 @@ function InnerRoomUI({
           />
         </div>
 
-        {/* Main Stage + Toolbar */}
-        <main
-          className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
-            sidebarOpen ? 'md:mr-0' : ''
-          }`}
-        >
+        {/* Mobile: sidebar as overlay when open */}
+        <div className={`md:hidden flex h-full absolute inset-0 z-40 ${sidebarOpen ? '' : 'pointer-events-none'}`}>
+          <Sidebar
+            open={sidebarOpen}
+            tab={sidebarTab}
+            onTabChange={setSidebarTab}
+            onClose={() => setSidebarOpen(false)}
+            sessionId={sessionId}
+            socket={socket}
+            userId={userId || ''}
+            userName={userName || user?.email || 'Unknown'}
+            unreadChatCount={unreadChatCount}
+            onResetChatCount={() => setUnreadChatCount(0)}
+            pinnedParticipantSid={pinnedSid}
+            onPinParticipant={handlePinParticipant}
+            raisedHands={raisedHands}
+          />
+        </div>
+
+        {/* ── Main Stage ── */}
+        <main className="flex-1 flex flex-col overflow-hidden relative">
           <FocusLayout
             viewMode={viewMode}
             pinnedParticipantSid={pinnedSid}
             onPinParticipant={handlePinParticipant}
           />
-
-          {/* Toolbar — sits at bottom of main stage only */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[50] transition-all duration-300">
-            <Toolbar
-              micMuted={micMuted}
-              cameraOff={cameraOff}
-              handRaised={handRaised}
-              screenShareActive={screenShareActive}
-              unreadChatCount={unreadChatCount}
-              onToggleMic={handleToggleMic}
-              onToggleCamera={handleToggleCamera}
-              onToggleScreenShare={handleToggleScreenShare}
-              onToggleHandRaise={handleToggleHandRaise}
-              onToggleChat={handleToggleChat}
-              onToggleSidebar={handleToggleSidebar}
-              onLeave={handleLeave}
-              onToast={addToast}
-              onPinLocal={() => handlePinParticipant(room.localParticipant.sid)}
-              isLocalPinned={pinnedSid === room.localParticipant.sid}
-            />
-          </div>
         </main>
+      </div>
+
+      {/* ── Toolbar ── */}
+      {/* Sibling to main content — never inside the sidebar */}
+      <div className="toolbar-container">
+        <Toolbar
+          micMuted={micMuted}
+          cameraOff={cameraOff}
+          handRaised={handRaised}
+          screenShareActive={screenShareActive}
+          unreadChatCount={unreadChatCount}
+          onToggleMic={handleToggleMic}
+          onToggleCamera={handleToggleCamera}
+          onToggleScreenShare={handleToggleScreenShare}
+          onToggleHandRaise={handleToggleHandRaise}
+          onToggleChat={handleToggleChat}
+          onToggleSidebar={handleToggleSidebar}
+          onLeave={handleLeave}
+          onToast={addToast}
+          onPinLocal={() => handlePinParticipant(room.localParticipant.sid)}
+          isLocalPinned={pinnedSid === room.localParticipant.sid}
+        />
       </div>
 
       {/* Toast notifications */}

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState, useEffect } from 'react';
+import React from 'react';
 import {
   useParticipants,
   useLocalParticipant,
@@ -18,6 +18,7 @@ import {
   MonitorUp,
   Pin,
   Hand,
+  Crown,
 } from 'lucide-react';
 import type { Participant } from 'livekit-client';
 import { Track } from 'livekit-client';
@@ -76,8 +77,9 @@ function LiveParticipantRow({
       onClick={onClick}
       className={`w-full flex items-center gap-3 px-3 py-2.5 hover:bg-gray-800/50 transition-colors border-b border-gray-800/50 text-left ${
         isPinned ? 'bg-engagio-900/30 border-l-2 border-l-engagio-500' : ''
-      }`}
+      } ${isHandRaised ? 'bg-yellow-500/5' : ''}`}
     >
+      {/* Avatar with hand-raise or speaking indicator */}
       <div className="relative flex-shrink-0">
         <div
           className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
@@ -86,8 +88,16 @@ function LiveParticipantRow({
         >
           {initials}
         </div>
+        {/* Speaking dot */}
         {isSpeaking && (
           <span className="absolute -bottom-0 -right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-gray-900" />
+        )}
+        {/* Hand raise overlay */}
+        {isHandRaised && !isSpeaking && (
+          <span className="absolute -bottom-0 -right-0 w-3.5 h-3.5 bg-yellow-500 rounded-full border-2 border-gray-900 flex items-center justify-center"
+                title="Hand raised">
+            <Hand className="w-2 h-2 text-black" />
+          </span>
         )}
       </div>
 
@@ -96,6 +106,7 @@ function LiveParticipantRow({
           {name}
           {isLocal && <span className="text-engagio-400 text-xs">(You)</span>}
           {isPinned && <Pin className="w-3 h-3 text-engagio-400 flex-shrink-0" />}
+          {isHandRaised && <span className="text-yellow-400 text-xs font-medium ml-1">🙋 Hand Raised</span>}
         </p>
         <p className="text-[11px] text-gray-500 capitalize">
           {isLocal ? 'Host' : 'Participant'}
@@ -106,7 +117,6 @@ function LiveParticipantRow({
         {!audioMuted ? <Mic className="w-3.5 h-3.5 text-green-400" /> : <MicOff className="w-3.5 h-3.5 text-gray-500" />}
         {!cameraOff ? <Video className="w-3.5 h-3.5 text-green-400" /> : <VideoOff className="w-3.5 h-3.5 text-gray-500" />}
         {screenSharing && <MonitorUp className="w-3.5 h-3.5 text-blue-400" />}
-        {isHandRaised && <Hand className="w-3.5 h-3.5 text-yellow-400" />}
       </div>
     </button>
   );
@@ -127,14 +137,21 @@ function ParticipantsPanel({
   const participants = useParticipants();
   const { localParticipant } = useLocalParticipant();
 
-  const sortedParticipants = useMemo(() => {
+  const sortedParticipants = React.useMemo(() => {
     const list: Participant[] = [];
     if (localParticipant) list.push(localParticipant);
     participants.forEach((p) => {
       if (p.sid !== localParticipant?.sid) list.push(p);
     });
+    // Sort by hand-raised first, then alphabetically
+    list.sort((a, b) => {
+      const aHand = raisedHands?.[a.identity] ? 1 : 0;
+      const bHand = raisedHands?.[b.identity] ? 1 : 0;
+      if (bHand !== aHand) return bHand - aHand;
+      return (a.name || a.identity).localeCompare(b.name || b.identity);
+    });
     return list;
-  }, [participants, localParticipant]);
+  }, [participants, localParticipant, raisedHands]);
 
   return (
     <div className="flex-1 overflow-y-auto scrollbar-hide">
@@ -168,12 +185,12 @@ function QAPanel({
   userId: string;
   userName: string;
 }) {
-  const [questions, setQuestions] = useState<
+  const [questions, setQuestions] = React.useState<
     { id: string; userId: string; userName: string; text: string; votes: number; voted: boolean; answered: boolean }[]
   >([]);
-  const [text, setText] = useState('');
+  const [text, setText] = React.useState('');
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (!socket) return;
     const onQuestion = (data: any) => {
       if (!data?.id) return;
@@ -369,76 +386,86 @@ export default function Sidebar({
   raisedHands,
 }: SidebarProps) {
   return (
-    <aside
-      className={`sidebar-panel bg-edu-slate border-l border-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ${
-        open ? 'w-72 sm:w-80' : 'w-0'
-      }`}
-      aria-label="Chat and participants panel"
-    >
-      <div className="w-72 sm:w-80 h-full flex flex-col">
-        {/* Tabs */}
-        <div className="flex border-b border-gray-800">
-          <TabButton
-            id="chat"
-            label="Chat"
-            icon={MessageSquare}
-            active={tab === 'chat'}
-            onClick={() => {
-              onTabChange('chat');
-              onResetChatCount?.();
-            }}
-            badge={tab !== 'chat' ? unreadChatCount : 0}
-          />
-          <TabButton
-            id="participants"
-            label="People"
-            icon={Users}
-            active={tab === 'participants'}
-            onClick={() => onTabChange('participants')}
-          />
-          <TabButton
-            id="qa"
-            label="Q&A"
-            icon={HelpCircle}
-            active={tab === 'qa'}
-            onClick={() => onTabChange('qa')}
-          />
-
-          <button
-            onClick={onClose}
-            className="px-3 text-gray-400 hover:text-white transition-colors"
-            aria-label="Close sidebar"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Panels */}
-        <div className="flex-1 overflow-hidden">
-          {tab === 'chat' && (
-            <div className="h-full">
-              <Chat
-                userId={userId || ''}
-                userName={userName || 'Anonymous'}
-                socket={socket}
-                sessionId={sessionId}
-                embedded
-              />
-            </div>
-          )}
-
-          {tab === 'participants' && (
-            <ParticipantsPanel
-              userId={userId}
-              pinnedSid={pinnedParticipantSid}
-              onPinParticipant={onPinParticipant}
-              raisedHands={raisedHands}
+    <>
+      {/* Mobile overlay backdrop */}
+      {open && (
+        <div
+          className="sidebar-backdrop md:hidden"
+          onClick={onClose}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`sidebar-panel bg-edu-slate border-l border-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ${
+          open ? 'w-72 sm:w-80' : 'w-0'
+        }`}
+        aria-label="Chat and participants panel"
+      >
+        <div className="w-72 sm:w-80 h-full flex flex-col">
+          {/* Tabs */}
+          <div className="flex border-b border-gray-800">
+            <TabButton
+              id="chat"
+              label="Chat"
+              icon={MessageSquare}
+              active={tab === 'chat'}
+              onClick={() => {
+                onTabChange('chat');
+                onResetChatCount?.();
+              }}
+              badge={tab !== 'chat' ? unreadChatCount : 0}
             />
-          )}
+            <TabButton
+              id="participants"
+              label="People"
+              icon={Users}
+              active={tab === 'participants'}
+              onClick={() => onTabChange('participants')}
+            />
+            <TabButton
+              id="qa"
+              label="Q&A"
+              icon={HelpCircle}
+              active={tab === 'qa'}
+              onClick={() => onTabChange('qa')}
+            />
 
-          {tab === 'qa' && <QAPanel socket={socket} sessionId={sessionId} userId={userId} userName={userName} />}
+            <button
+              onClick={onClose}
+              className="px-3 text-gray-400 hover:text-white transition-colors"
+              aria-label="Close sidebar"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          {/* Panels */}
+          <div className="flex-1 overflow-hidden">
+            {tab === 'chat' && (
+              <div className="h-full">
+                <Chat
+                  userId={userId || ''}
+                  userName={userName || 'Anonymous'}
+                  socket={socket}
+                  sessionId={sessionId}
+                  embedded
+                />
+              </div>
+            )}
+
+            {tab === 'participants' && (
+              <ParticipantsPanel
+                userId={userId}
+                pinnedSid={pinnedParticipantSid}
+                onPinParticipant={onPinParticipant}
+                raisedHands={raisedHands}
+              />
+            )}
+
+            {tab === 'qa' && <QAPanel socket={socket} sessionId={sessionId} userId={userId} userName={userName} />}
+          </div>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }
