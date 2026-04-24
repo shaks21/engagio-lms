@@ -148,7 +148,7 @@ function ParticipantsPanel({
             isLocal={p.sid === localParticipant?.sid}
             isPinned={p.sid === pinnedSid}
             onClick={() => onPinParticipant?.(p.sid)}
-            isHandRaised={raisedHands?.[p.sid]}
+            isHandRaised={raisedHands?.[p.identity]}
           />
         ))
       )}

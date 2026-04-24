@@ -122,13 +122,10 @@ function InnerRoomUI({
 
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('focus');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);                  // default open on desktop
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chat');
   const [pinnedSid, setPinnedSid] = useState<string | undefined>(undefined);
-
   const [handRaised, setHandRaised] = useState(false);
-
-  // Track hand-raised state for all participants
   const [raisedHands, setRaisedHands] = useState<Record<string, boolean>>({});
 
   // Chat toast
@@ -204,8 +201,8 @@ function InnerRoomUI({
   useEffect(() => {
     if (!socket) return;
     const onHandRaise = (data: any) => {
-      if (!data?.clientId) return;
-      setRaisedHands((prev) => ({ ...prev, [data.clientId]: data.raised }));
+      if (!data?.userId) return;
+      setRaisedHands((prev) => ({ ...prev, [data.userId]: data.raised }));
     };
     socket.on('participant-hand-raise', onHandRaise);
     return () => { socket.off('participant-hand-raise', onHandRaise); };
@@ -239,20 +236,18 @@ function InnerRoomUI({
 
   return (
     <>
-      <div className="flex-1 flex overflow-hidden relative">
-        {/* Main Stage */}
-        <main className={`flex-1 flex flex-col overflow-hidden transition-all duration-300 relative ${
-          sidebarOpen ? 'mr-0 md:mr-80' : ''
-        }`}>
-          <FocusLayout
-            viewMode={viewMode}
-            pinnedParticipantSid={pinnedSid}
-            onPinParticipant={handlePinParticipant}
-          />
-        </main>
+      {/* Floating Header */}
+      <GlassHeader
+        connected={room.state === 'connected'}
+        viewMode={viewMode}
+        onViewModeChange={setViewMode}
+        onLeave={handleLeave}
+        participantCount={room.numParticipants}
+      />
 
+      <div className="flex-1 flex overflow-hidden relative">
         {/* Sidebar — desktop always visible, mobile conditional */}
-        <div className={`${sidebarOpen ? 'block' : 'hidden'} md:block flex-shrink-0`}>
+        <div className={`${sidebarOpen ? 'flex' : 'hidden'} flex-shrink-0 md:flex z-40`}>
           <Sidebar
             open={sidebarOpen}
             tab={sidebarTab}
@@ -269,38 +264,40 @@ function InnerRoomUI({
             raisedHands={raisedHands}
           />
         </div>
-      </div>
 
-      {/* Floating Header */}
-      <GlassHeader
-        connected={room.state === 'connected'}
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        onLeave={handleLeave}
-        participantCount={room.numParticipants}
-      />
+        {/* Main Stage + Toolbar */}
+        <main
+          className={`flex-1 flex flex-col overflow-hidden relative transition-all duration-300 ${
+            sidebarOpen ? 'md:mr-0' : ''
+          }`}
+        >
+          <FocusLayout
+            viewMode={viewMode}
+            pinnedParticipantSid={pinnedSid}
+            onPinParticipant={handlePinParticipant}
+          />
 
-      {/* Toolbar — positioned within main content area, not fixed viewport-center */}
-      <div className={`absolute bottom-4 left-1/2 -translate-x-1/2 z-[60] transition-all duration-300 ${
-        sidebarOpen ? 'md:left-[calc(50%-10rem)]' : ''
-      }`}>
-        <Toolbar
-          micMuted={micMuted}
-          cameraOff={cameraOff}
-          handRaised={handRaised}
-          screenShareActive={screenShareActive}
-          unreadChatCount={unreadChatCount}
-          onToggleMic={handleToggleMic}
-          onToggleCamera={handleToggleCamera}
-          onToggleScreenShare={handleToggleScreenShare}
-          onToggleHandRaise={handleToggleHandRaise}
-          onToggleChat={handleToggleChat}
-          onToggleSidebar={handleToggleSidebar}
-          onLeave={handleLeave}
-          onToast={addToast}
-          onPinLocal={() => handlePinParticipant(room.localParticipant.sid)}
-          isLocalPinned={pinnedSid === room.localParticipant.sid}
-        />
+          {/* Toolbar — sits at bottom of main stage only */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[50] transition-all duration-300">
+            <Toolbar
+              micMuted={micMuted}
+              cameraOff={cameraOff}
+              handRaised={handRaised}
+              screenShareActive={screenShareActive}
+              unreadChatCount={unreadChatCount}
+              onToggleMic={handleToggleMic}
+              onToggleCamera={handleToggleCamera}
+              onToggleScreenShare={handleToggleScreenShare}
+              onToggleHandRaise={handleToggleHandRaise}
+              onToggleChat={handleToggleChat}
+              onToggleSidebar={handleToggleSidebar}
+              onLeave={handleLeave}
+              onToast={addToast}
+              onPinLocal={() => handlePinParticipant(room.localParticipant.sid)}
+              isLocalPinned={pinnedSid === room.localParticipant.sid}
+            />
+          </div>
+        </main>
       </div>
 
       {/* Toast notifications */}
