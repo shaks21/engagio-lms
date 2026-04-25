@@ -63,9 +63,8 @@ function useClassroomSocket(
   useEffect(() => {
     if (!userId || !sessionId || !tenantId) return;
 
-    const SOCKET =
-      process.env.NEXT_PUBLIC_SOCKET_URL || 'wss://engagio.duckdns.org/classroom';
-    const sk = io(SOCKET, {
+    const baseUrl = (process.env.NEXT_PUBLIC_SOCKET_URL || 'wss://engagio.duckdns.org').replace(/\/$/, '');
+    const sk = io(`${baseUrl}/classroom`, {
       transports: ['websocket'],
       autoConnect: true,
     });

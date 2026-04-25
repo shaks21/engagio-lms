@@ -84,8 +84,11 @@ function SafeParticipantTile({
       return () => {
         audioTrack?.detach(audioEl);
       };
+    } else if (audioEl && !audioTrack && !participant.isLocal) {
+      audioEl.srcObject = null;
     }
-  }, [micPub, participant.isLocal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [micPub?.track, participant.isLocal]);
 
   return (
     <div className="h-full w-full relative">
