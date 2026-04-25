@@ -22,8 +22,15 @@ export class SessionController {
 
   @Post("start")
   @HttpCode(HttpStatus.CREATED)
-  async start(@Request() req, @Body() dto: StartSessionDto) {
-    return this.sessionService.start(req.tenantId, req.user.id, dto);
+  async start(
+    @Request() req,
+    @Body() dto: StartSessionDto,
+    @Query("courseId") courseId?: string,
+  ) {
+    return this.sessionService.start(req.tenantId, req.user.id, {
+      ...dto,
+      courseId: dto.courseId || courseId,
+    } as StartSessionDto);
   }
 
   @Post(":id/end")

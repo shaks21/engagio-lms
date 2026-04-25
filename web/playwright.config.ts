@@ -10,6 +10,7 @@ export default defineConfig({
   reporter: 'list',
   use: {
     baseURL: 'http://164.68.119.230:3001',
+    headless: true,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',  // Capture video on test failure

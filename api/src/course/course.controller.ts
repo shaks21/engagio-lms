@@ -25,7 +25,10 @@ export class CourseController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@Request() req, @Body() dto: CreateCourseDto) {
-    return this.courseService.create(req.tenantId, dto);
+    return this.courseService.create(req.tenantId, {
+      ...dto,
+      instructorId: dto.instructorId || req.user.id,
+    });
   }
 
   @Get()

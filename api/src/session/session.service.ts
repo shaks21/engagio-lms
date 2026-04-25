@@ -11,8 +11,9 @@ export class SessionService {
   constructor(private readonly prisma: PrismaService) {}
 
   async start(tenantId: string, userId: string, dto: StartSessionDto) {
+    const resolvedCourseId = dto.courseId!;
     const course = await this.prisma.course.findFirst({
-      where: { id: dto.courseId, tenantId },
+      where: { id: resolvedCourseId, tenantId },
     });
     if (!course) {
       throw new NotFoundException("Course not found");
@@ -23,7 +24,7 @@ export class SessionService {
     return this.prisma.session.create({
       data: {
         tenantId,
-        courseId: dto.courseId,
+        courseId: resolvedCourseId,
         userId,
         classroomCode,
         dwellTime: 0,

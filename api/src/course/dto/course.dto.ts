@@ -8,8 +8,9 @@ export class CreateCourseDto {
   @IsString()
   description?: string;
 
+  @IsOptional()
   @IsUUID()
-  instructorId: string;
+  instructorId?: string;
 }
 
 export class UpdateCourseDto {

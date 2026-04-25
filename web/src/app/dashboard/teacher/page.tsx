@@ -6,6 +6,7 @@ import Sidebar from '@/components/ui/sidebar';
 import Card from '@/components/ui/card';
 import api from '@/lib/api';
 import TeacherHeatmap from '@/components/dashboard/TeacherHeatmap';
+import ClassPulseChart from '@/components/dashboard/ClassPulseChart';
 import { ChevronDown } from 'lucide-react';
 
 interface SessionOption {
@@ -27,7 +28,7 @@ export default function TeacherDashboardPage() {
         const list = Array.isArray(res.data) ? res.data : [];
         setSessions(list.map((s: any) => ({
           id: s.id || s.sessionId || s._id || '',
-          courseName: s.courseName || s.title || 'Untitled Session',
+          courseName: s.courseName || s.course?.title || s.title || 'Untitled Session',
           startTime: s.startTime || s.startedAt || '',
         })));
       })
@@ -55,6 +56,7 @@ export default function TeacherDashboardPage() {
               }
               <div className="relative">
                 <button
+                  data-testid="session-picker"
                   onClick={() => setShowPicker((v) => !v)}
                   className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg px-4 py-2 text-sm text-white transition-colors"
                 >
@@ -84,9 +86,14 @@ export default function TeacherDashboardPage() {
             </div>
           </div>
 
-          {
-            /* Heatmap */
-          }
+          {/* Class Pulse Chart */}
+          {sessionId && (
+            <Card className="mb-6">
+              <ClassPulseChart sessionId={sessionId} />
+            </Card>
+          )}
+
+          {/* Heatmap */}
           <Card>
             {!sessionId ? (
               <div className="text-center text-gray-500 py-12 text-sm">

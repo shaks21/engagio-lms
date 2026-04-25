@@ -7,12 +7,13 @@ export class CourseService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(tenantId: string, dto: CreateCourseDto) {
+    const instructorId = dto.instructorId as string;
     return this.prisma.course.create({
       data: {
         tenantId,
         title: dto.title,
         description: dto.description,
-        instructorId: dto.instructorId,
+        instructorId,
       },
     });
   }
