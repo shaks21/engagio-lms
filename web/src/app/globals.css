@@ -60,6 +60,11 @@
   --color-engagio-800: #075985;
   --color-engagio-900: #0c4a6e;
   --color-engagio-950: #082f49;
+
+  /* Semantic status colors for heatmap */
+  --color-engagio-success: #22c55e;
+  --color-engagio-warning: #eab308;
+  --color-engagio-danger:  #ef4444;
 }
 
 /* Base body */
