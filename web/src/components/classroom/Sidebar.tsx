@@ -40,6 +40,22 @@ interface SidebarProps {
   pinnedParticipantSid?: string;
   onPinParticipant?: (sid: string) => void;
   raisedHands?: Record<string, boolean>;
+  chatMessages: Array<{
+    id: string;
+    userId: string;
+    userName: string;
+    text: string;
+    timestamp: Date;
+    isOwn: boolean;
+  }>;
+  onAddChatMessage: (msg: {
+    id: string;
+    userId: string;
+    userName: string;
+    text: string;
+    timestamp: Date;
+    isOwn: boolean;
+  }) => void;
 }
 
 /* ─── Live participant row with media indicators ─── */
@@ -384,6 +400,8 @@ export default function Sidebar({
   pinnedParticipantSid,
   onPinParticipant,
   raisedHands,
+  chatMessages,
+  onAddChatMessage,
 }: SidebarProps) {
   return (
     <>
@@ -448,7 +466,8 @@ export default function Sidebar({
                   userName={userName || 'Anonymous'}
                   socket={socket}
                   sessionId={sessionId}
-                  embedded
+                  messages={chatMessages}
+                  onAddMessage={onAddChatMessage}
                 />
               </div>
             )}

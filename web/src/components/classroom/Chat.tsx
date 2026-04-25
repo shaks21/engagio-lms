@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { Send } from 'lucide-react';
 import type { Socket } from 'socket.io-client';
 
-interface Message {
+export interface Message {
   id: string;
   userId: string;
   userName: string;
@@ -18,8 +18,8 @@ interface ChatProps {
   userName: string;
   socket: Socket | null;
   sessionId: string;
-  embedded?: boolean;
-  onUnreadChange?: (count: number) => void;
+  messages: Message[];                              // lifted from InnerRoomUI
+  onAddMessage: (msg: Message) => void;            // callback to parent
 }
 
 const REACTIONS = ['👍', '❓', '🎉', '💡'];
@@ -69,15 +69,12 @@ export default function Chat({
   userName,
   socket,
   sessionId,
-  embedded = true,
-  onUnreadChange,
+  messages,
+  onAddMessage,
 }: ChatProps) {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [input, setInput] = React.useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll
   useEffect(() => {
@@ -86,48 +83,8 @@ export default function Chat({
 
   // Focus on mount
   useEffect(() => {
-    if (embedded) {
-      inputRef.current?.focus();
-      setUnreadCount(0);
-      onUnreadChange?.(0);
-    }
-  }, [embedded, onUnreadChange]);
-
-  // Socket listener
-  useEffect(() => {
-    if (!socket) return;
-
-    const onChatMessage = (data: {
-      id: string;
-      userId: string;
-      userName: string;
-      text: string;
-      timestamp: string;
-    }) => {
-      if (data.userId === userId) return; // already shown optimistically
-
-      const msg: Message = {
-        id: data.id,
-        userId: data.userId,
-        userName: data.userName,
-        text: data.text,
-        timestamp: new Date(data.timestamp),
-        isOwn: false,
-      };
-
-      setMessages((prev) => [...prev, msg]);
-      setUnreadCount((prev) => {
-        const next = prev + 1;
-        onUnreadChange?.(next);
-        return next;
-      });
-    };
-
-    socket.on('chat-message', onChatMessage);
-    return () => {
-      socket.off('chat-message', onChatMessage);
-    };
-  }, [socket, userId, onUnreadChange]);
+    inputRef.current?.focus();
+  }, []);
 
   const handleSend = useCallback(() => {
     if (!input.trim() || !socket) return;
@@ -143,7 +100,9 @@ export default function Chat({
       timestamp: new Date(),
       isOwn: true,
     };
-    setMessages((prev) => [...prev, ownMsg]);
+
+    // Lift: add optimistically via parent callback
+    onAddMessage(ownMsg);
 
     socket.emit('engagementEvent', {
       type: 'CHAT',
@@ -151,7 +110,7 @@ export default function Chat({
     });
 
     setInput('');
-  }, [input, socket, userId, userName, sessionId]);
+  }, [input, socket, userId, userName, sessionId, onAddMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -170,8 +129,8 @@ export default function Chat({
       timestamp: new Date(),
       isOwn: true,
     };
-    setMessages((prev) => [...prev, ownMsg]);
 
+    onAddMessage(ownMsg);
     socket?.emit('engagementEvent', {
       type: 'CHAT',
       payload: { text: emoji, sessionId },
@@ -179,7 +138,7 @@ export default function Chat({
   };
 
   return (
-    <div className={`flex flex-col ${embedded ? 'h-full bg-transparent' : 'h-full'}`} ref={containerRef}>
+    <div className="flex flex-col h-full bg-transparent">
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-hide">
         {messages.length === 0 ? (

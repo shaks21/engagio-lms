@@ -13,6 +13,7 @@ import FocusLayout from './FocusLayout';
 import Sidebar, { type SidebarTab } from './Sidebar';
 import Toolbar from './Toolbar';
 import ToastContainer, { type Toast } from './ToastContainer';
+import type { Message as ChatMessageType } from './Chat';
 import PreJoin from './PreJoin';
 
 /* ───────────────── types ───────────────── */
@@ -127,6 +128,9 @@ function InnerRoomUI({
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHands, setRaisedHands] = useState<Record<string, boolean>>({});
 
+  // Chat state — lifted here so it survives sidebar unmount
+  const [chatMessages, setChatMessages] = useState<ChatMessageType[]>([]);
+
   // Chat toast
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -207,6 +211,36 @@ function InnerRoomUI({
     return () => { socket.off('participant-hand-raise', onHandRaise); };
   }, [socket]);
 
+  // Listen for chat messages from other participants — survives sidebar unmount
+  useEffect(() => {
+    if (!socket) return;
+    const onChatMessage = (data: {
+      id: string;
+      userId: string;
+      userName: string;
+      text: string;
+      timestamp: string;
+    }) => {
+      if (data.userId === userId) return; // own messages already added optimistically
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: data.id,
+          userId: data.userId,
+          userName: data.userName,
+          text: data.text,
+          timestamp: new Date(data.timestamp),
+          isOwn: false,
+        },
+      ]);
+      // increment unread only when chat tab is not active
+      setUnreadChatCount((prev) => prev + 1);
+    };
+
+    socket.on('chat-message', onChatMessage);
+    return () => { socket.off('chat-message', onChatMessage); };
+  }, [socket, userId]);
+
   const handleToggleChat = useCallback(() => {
     setSidebarTab('chat');
     setSidebarOpen((o) => !o);
@@ -231,6 +265,10 @@ function InnerRoomUI({
 
   const handleUnreadChange = useCallback((count: number) => {
     setUnreadChatCount(count);
+  }, []);
+
+  const handleAddChatMessage = useCallback((msg: ChatMessageType) => {
+    setChatMessages((prev) => [...prev, msg]);
   }, []);
 
   return (
@@ -263,6 +301,8 @@ function InnerRoomUI({
             pinnedParticipantSid={pinnedSid}
             onPinParticipant={handlePinParticipant}
             raisedHands={raisedHands}
+            chatMessages={chatMessages}
+            onAddChatMessage={handleAddChatMessage}
           />
         </div>
 
@@ -282,6 +322,8 @@ function InnerRoomUI({
             pinnedParticipantSid={pinnedSid}
             onPinParticipant={handlePinParticipant}
             raisedHands={raisedHands}
+            chatMessages={chatMessages}
+            onAddChatMessage={handleAddChatMessage}
           />
         </div>
 
