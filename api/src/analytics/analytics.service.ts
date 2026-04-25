@@ -176,11 +176,28 @@ export class AnalyticsService {
     });
     const userMap = new Map<string, { email: string }>(users.map((u) => [u.id, u as { email: string }]));
 
+    /* ─────────────── enrich with hand-raise state ─────────────── */
+    const handRaises = await this.prisma.engagementEvent.findMany({
+      where: { sessionId, tenantId, type: "HAND_RAISE" as EventType },
+      orderBy: { timestamp: "desc" },
+    });
+
+    const lastHandRaiseByUser = new Map<string, Date>();
+    for (const hr of handRaises) {
+      const p = hr.payload as { userId?: string; raised?: boolean };
+      const uid = p?.userId;
+      if (uid && p?.raised && !lastHandRaiseByUser.has(uid)) {
+        lastHandRaiseByUser.set(uid, hr.timestamp);
+      }
+    }
+
     return [...seen.values()].map((s) => ({
       userId: s.userId,
       email: userMap.get(s.userId)?.email ?? "Unknown",
       score: s.score,
       color: s.score > 70 ? "green" : s.score >= 40 ? "yellow" : "red",
+      isHandRaised: lastHandRaiseByUser.has(s.userId),
+      handRaisedAt: lastHandRaiseByUser.get(s.userId) || undefined,
     }));
   }
 

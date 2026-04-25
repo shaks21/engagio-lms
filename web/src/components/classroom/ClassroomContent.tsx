@@ -347,6 +347,20 @@ function InnerRoomUI({
     setChatMessages((prev) => [...prev, msg]);
   }, []);
 
+  // Listen for nudges
+  useEffect(() => {
+    if (!socket) return;
+    const onNudge = (data: { message: string }) => {
+      addToast({
+        id: `nudge_${Date.now()}`,
+        message: data.message || 'Your teacher is checking in on you',
+        type: 'warning',
+      });
+    };
+    socket.on('nudge-received', onNudge);
+    return () => { socket.off('nudge-received', onNudge); };
+  }, [socket, addToast]);
+
   return (
       <>
       {/* Floating Header — sticky to avoid overlapping sidebar */}

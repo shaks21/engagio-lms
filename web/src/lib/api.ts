@@ -86,7 +86,7 @@ export async function getActiveSessions(): Promise<Session[]> {
   return data;
 }
 
-export async function startSession(dto: { courseId: string; userId: string }): Promise<Session> {
+export async function startSession(dto: { courseId: string }): Promise<Session> {
   const { data } = await api.post<Session>('/sessions/start', dto);
   return data;
 }

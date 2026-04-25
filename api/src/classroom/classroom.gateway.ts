@@ -572,4 +572,43 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     return { status: "ok" };
   }
+
+  /* ──────── Private Nudge ──────── */
+  @SubscribeMessage("send-nudge")
+  async handleSendNudge(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; targetUserId: string },
+  ) {
+    const sessionId = data.sessionId;
+    const targetUserId = data.targetUserId;
+    const senderUserId = client.data.userId as string | undefined;
+
+    if (!sessionId || !targetUserId) {
+      return { status: "error", message: "Missing sessionId or targetUserId" };
+    }
+
+    // Resolve tenantId from session (dashboard may not have done joinClassroom)
+    const session = await this.prisma.session.findFirst({ where: { id: sessionId } });
+    if (!session) return { status: "error", message: "Session not found" };
+
+    const tenantId = session.tenantId;
+
+    // Emit to the session room — any student joined to that room will receive it
+    this.server.to(`session::${sessionId}`).emit("nudge-received", {
+      message: "Your teacher is checking in on you",
+      from: senderUserId,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Persist TEACHER_INTERVENTION to Kafka for analytics
+    await this.ingest.emitEvent({
+      tenantId,
+      sessionId,
+      type: "TEACHER_INTERVENTION",
+      payload: { targetUserId, senderUserId: senderUserId || "unknown", action: "NUDGE" },
+      userId: senderUserId || "unknown",
+    });
+
+    return { status: "ok", delivered: true };
+  }
 }

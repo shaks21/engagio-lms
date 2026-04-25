@@ -1,6 +1,7 @@
 import io from 'socket.io-client';
 
-const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'ws://localhost:3000/classroom';
+const BASE_URL = (process.env.NEXT_PUBLIC_SOCKET_URL || 'ws://localhost:3000').replace(/\/$/, '');
+const SOCKET_URL = `${BASE_URL}/classroom`;
 
 let socketInstance: ReturnType<typeof io> | null = null;
 
