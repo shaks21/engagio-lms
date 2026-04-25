@@ -15,6 +15,7 @@ import Toolbar from './Toolbar';
 import ToastContainer, { type Toast } from './ToastContainer';
 import type { Message as ChatMessageType } from './Chat';
 import PreJoin from './PreJoin';
+import type { PollData } from './Poll';
 
 /* ───────────────── types ───────────────── */
 
@@ -131,6 +132,9 @@ function InnerRoomUI({
   // Chat state — lifted here so it survives sidebar unmount
   const [chatMessages, setChatMessages] = useState<ChatMessageType[]>([]);
 
+  // Poll state — lifted here so it survives sidebar unmount
+  const [polls, setPolls] = useState<PollData[]>([]);
+
   // Chat toast
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -241,6 +245,40 @@ function InnerRoomUI({
     return () => { socket.off('chat-message', onChatMessage); };
   }, [socket, userId]);
 
+  // Listen for poll events — survives sidebar unmount
+  useEffect(() => {
+    if (!socket) return;
+    const onPollCreated = (data: any) => {
+      if (!data?.id) return;
+      setPolls((prev) => {
+        if (prev.some((p) => p.id === data.id)) return prev;
+        return [...prev, { ...data, status: 'active' as const }];
+      });
+    };
+    const onPollVote = (data: any) => {
+      if (!data?.pollId || !data?.optionId) return;
+      setPolls((prev) =>
+        prev.map((p) =>
+          p.id === data.pollId
+            ? {
+                ...p,
+                options: p.options.map((o: { id: string; text: string; voteCount: number; percentage: number }) =>
+                  o.id === data.optionId ? { ...o, voteCount: o.voteCount + 1 } : o
+                ),
+                totalVotes: p.totalVotes + 1,
+              }
+            : p
+        )
+      );
+    };
+    socket.on('poll-created', onPollCreated);
+    socket.on('poll-vote', onPollVote);
+    return () => {
+      socket.off('poll-created', onPollCreated);
+      socket.off('poll-vote', onPollVote);
+    };
+  }, [socket]);
+
   const handleToggleChat = useCallback(() => {
     setSidebarTab('chat');
     setSidebarOpen((o) => !o);
@@ -250,6 +288,44 @@ function InnerRoomUI({
   const handleToggleSidebar = useCallback(() => {
     setSidebarOpen((o) => !o);
   }, []);
+
+  const handleCreatePoll = useCallback((question: string, options: string[]) => {
+    if (!socket) return;
+    const id = `poll_${Date.now()}`;
+    const pollData: PollData = {
+      id,
+      question,
+      options: options.map((text, i) => ({ id: `opt_${i}`, text, voteCount: 0, percentage: 0 })),
+      totalVotes: 0,
+      status: 'active',
+    };
+    setPolls((prev) => [...prev, pollData]);
+    socket.emit('engagementEvent', {
+      type: 'POLL_CREATED',
+      payload: { id, question, options: pollData.options, totalVotes: 0 },
+    });
+  }, [socket]);
+
+  const handleVotePoll = useCallback((pollId: string, optionId: string) => {
+    if (!socket) return;
+    setPolls((prev) =>
+      prev.map((p) =>
+        p.id === pollId
+          ? {
+              ...p,
+              options: p.options.map((o) =>
+                o.id === optionId ? { ...o, voteCount: o.voteCount + 1 } : o
+              ),
+              totalVotes: p.totalVotes + 1,
+            }
+          : p
+      )
+    );
+    socket.emit('engagementEvent', {
+      type: 'POLL_VOTE',
+      payload: { pollId, optionId },
+    });
+  }, [socket]);
 
   const handleLeave = useCallback(() => {
     room.disconnect();
@@ -303,6 +379,10 @@ function InnerRoomUI({
             raisedHands={raisedHands}
             chatMessages={chatMessages}
             onAddChatMessage={handleAddChatMessage}
+            isTeacher={!!user?.role}
+            polls={polls}
+            onCreatePoll={handleCreatePoll}
+            onVotePoll={handleVotePoll}
           />
         </div>
 
@@ -324,6 +404,10 @@ function InnerRoomUI({
             raisedHands={raisedHands}
             chatMessages={chatMessages}
             onAddChatMessage={handleAddChatMessage}
+            isTeacher={!!user?.role}
+            polls={polls}
+            onCreatePoll={handleCreatePoll}
+            onVotePoll={handleVotePoll}
           />
         </div>
 

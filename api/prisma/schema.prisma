@@ -34,6 +34,7 @@ model Tenant {
   sessions              Session[]
   events                EngagementEvent[]
   engagementSnapshots   EngagementSnapshot[]
+  polls                 Poll[]
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 }
@@ -100,6 +101,7 @@ model Session {
   endedAt       DateTime?
   dwellTime     Int               @default(0)
   events        EngagementEvent[]
+  polls         Poll[]
 
   @@index([tenantId])
   @@index([userId])
@@ -137,4 +139,50 @@ model EngagementSnapshot {
   @@index([userId])
   @@index([tenantId, sessionId, timestamp])
   @@index([userId, sessionId])
+}
+
+model Poll {
+  id        String       @id @default(uuid())
+  tenantId  String
+  tenant    Tenant       @relation(fields: [tenantId], references: [id])
+  sessionId String
+  session   Session      @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  question  String
+  status    String       @default("active") // active | closed
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  options   PollOption[]
+  votes     PollVote[]
+
+  @@index([tenantId])
+  @@index([sessionId])
+  @@index([status])
+}
+
+model PollOption {
+  id        String    @id @default(uuid())
+  pollId    String
+  poll      Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  text      String
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  votes     PollVote[]
+
+  @@index([pollId])
+  @@index([sortOrder])
+}
+
+model PollVote {
+  id         String   @id @default(uuid())
+  pollId     String
+  poll       Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  optionId   String
+  option     PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  userId     String
+  createdAt  DateTime @default(now())
+
+  @@unique([pollId, userId])
+  @@index([pollId])
+  @@index([optionId])
+  @@index([userId])
 }

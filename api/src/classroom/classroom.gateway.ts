@@ -433,6 +433,22 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
         clientId: client.id,
         count: (data.payload as { count?: number })?.count ?? 1,
       });
+    } else if (data.type === "POLL_CREATED") {
+      this.server.to(sessionSocket).emit("poll-created", {
+        id: (data.payload as { id?: string })?.id || "",
+        question: (data.payload as { question?: string })?.question || "",
+        options: (data.payload as { options?: Array<{ id: string; text: string; voteCount: number; percentage: number }> })?.options || [],
+        totalVotes: (data.payload as { totalVotes?: number })?.totalVotes || 0,
+        status: "active",
+        timestamp: new Date().toISOString(),
+      });
+    } else if (data.type === "POLL_VOTE") {
+      this.server.to(sessionSocket).emit("poll-vote", {
+        pollId: (data.payload as { pollId?: string })?.pollId || "",
+        optionId: (data.payload as { optionId?: string })?.optionId || "",
+        userId,
+        timestamp: new Date().toISOString(),
+      });
     }
 
     return { status: "ok" };

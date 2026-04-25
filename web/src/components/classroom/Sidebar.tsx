@@ -10,6 +10,7 @@ import {
   MessageSquare,
   Users,
   HelpCircle,
+  BarChart3,
   X,
   Mic,
   MicOff,
@@ -18,15 +19,15 @@ import {
   MonitorUp,
   Pin,
   Hand,
-  Crown,
 } from 'lucide-react';
 import type { Participant } from 'livekit-client';
 import { Track } from 'livekit-client';
 import Chat from './Chat';
+import Poll, { type PollData } from './Poll';
 
-export type SidebarTab = 'chat' | 'participants' | 'qa';
+export type SidebarTab = 'chat' | 'participants' | 'qa' | 'poll';
 
-interface SidebarProps {
+export interface SidebarProps {
   open: boolean;
   tab: SidebarTab;
   onTabChange: (tab: SidebarTab) => void;
@@ -56,9 +57,13 @@ interface SidebarProps {
     timestamp: Date;
     isOwn: boolean;
   }) => void;
+  isTeacher?: boolean;
+  polls?: PollData[];
+  onCreatePoll?: (question: string, options: string[]) => void;
+  onVotePoll?: (pollId: string, optionId: string) => void;
 }
 
-/* ─── Live participant row with media indicators ─── */
+/* ─── Live participant row ─── */
 function LiveParticipantRow({
   participant,
   isLocal,
@@ -95,7 +100,6 @@ function LiveParticipantRow({
         isPinned ? 'bg-engagio-900/30 border-l-2 border-l-engagio-500' : ''
       } ${isHandRaised ? 'bg-yellow-500/5' : ''}`}
     >
-      {/* Avatar with hand-raise or speaking indicator */}
       <div className="relative flex-shrink-0">
         <div
           className={`w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
@@ -104,11 +108,9 @@ function LiveParticipantRow({
         >
           {initials}
         </div>
-        {/* Speaking dot */}
         {isSpeaking && (
           <span className="absolute -bottom-0 -right-0 w-2.5 h-2.5 bg-green-400 rounded-full border-2 border-gray-900" />
         )}
-        {/* Hand raise overlay */}
         {isHandRaised && !isSpeaking && (
           <span className="absolute -bottom-0 -right-0 w-3.5 h-3.5 bg-yellow-500 rounded-full border-2 border-gray-900 flex items-center justify-center"
                 title="Hand raised">
@@ -124,9 +126,7 @@ function LiveParticipantRow({
           {isPinned && <Pin className="w-3 h-3 text-engagio-400 flex-shrink-0" />}
           {isHandRaised && <span className="text-yellow-400 text-xs font-medium ml-1">🙋 Hand Raised</span>}
         </p>
-        <p className="text-[11px] text-gray-500 capitalize">
-          {isLocal ? 'Host' : 'Participant'}
-        </p>
+        <p className="text-[11px] text-gray-500 capitalize">{isLocal ? 'Host' : 'Participant'}</p>
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0">
@@ -138,7 +138,7 @@ function LiveParticipantRow({
   );
 }
 
-/* ─── Participants panel using LiveKit hook ─── */
+/* ─── Participants panel ─── */
 function ParticipantsPanel({
   userId,
   pinnedSid,
@@ -159,7 +159,6 @@ function ParticipantsPanel({
     participants.forEach((p) => {
       if (p.sid !== localParticipant?.sid) list.push(p);
     });
-    // Sort by hand-raised first, then alphabetically
     list.sort((a, b) => {
       const aHand = raisedHands?.[a.identity] ? 1 : 0;
       const bHand = raisedHands?.[b.identity] ? 1 : 0;
@@ -212,29 +211,22 @@ function QAPanel({
       if (!data?.id) return;
       setQuestions((prev) => {
         if (prev.some((q) => q.id === data.id)) return prev;
-        return [
-          ...prev,
-          {
-            id: data.id,
-            userId: data.userId,
-            userName: data.userName || data.userId?.slice(0, 8) || 'User',
-            text: data.text || '',
-            votes: data.votes || 0,
-            voted: false,
-            answered: data.answered || false,
-          },
-        ];
+        return [...prev, {
+          id: data.id,
+          userId: data.userId,
+          userName: data.userName || data.userId?.slice(0, 8) || 'User',
+          text: data.text || '',
+          votes: data.votes || 0,
+          voted: false,
+          answered: data.answered || false,
+        }];
       });
     };
     const onVote = (data: any) => {
-      setQuestions((prev) =>
-        prev.map((q) => (q.id === data?.id ? { ...q, votes: data.votes ?? q.votes } : q))
-      );
+      setQuestions((prev) => prev.map((q) => (q.id === data?.id ? { ...q, votes: data.votes ?? q.votes } : q)));
     };
     const onAnswer = (data: any) => {
-      setQuestions((prev) =>
-        prev.map((q) => (q.id === data?.id ? { ...q, answered: true } : q))
-      );
+      setQuestions((prev) => prev.map((q) => (q.id === data?.id ? { ...q, answered: true } : q)));
     };
     socket.on('classroom-question', onQuestion);
     socket.on('classroom-question-vote', onVote);
@@ -249,38 +241,15 @@ function QAPanel({
   const ask = () => {
     if (!text.trim() || !socket) return;
     const id = Date.now().toString();
-    socket.emit('engagementEvent', {
-      type: 'QUESTION',
-      payload: { id, text: text.trim(), sessionId },
-    });
-    setQuestions((prev) => [
-      ...prev,
-      {
-        id,
-        userId,
-        userName: userName || 'You',
-        text: text.trim(),
-        votes: 0,
-        voted: false,
-        answered: false,
-      },
-    ]);
+    socket.emit('engagementEvent', { type: 'QUESTION', payload: { id, text: text.trim(), sessionId } });
+    setQuestions((prev) => [...prev, { id, userId, userName: userName || 'You', text: text.trim(), votes: 0, voted: false, answered: false }]);
     setText('');
   };
 
   const vote = (id: string) => {
     if (!socket) return;
-    socket.emit('engagementEvent', {
-      type: 'QUESTION_VOTE',
-      payload: { id, sessionId },
-    });
-    setQuestions((prev) =>
-      prev.map((q) =>
-        q.id === id && !q.voted
-          ? { ...q, votes: q.votes + 1, voted: true }
-          : q
-      )
-    );
+    socket.emit('engagementEvent', { type: 'QUESTION_VOTE', payload: { id, sessionId } });
+    setQuestions((prev) => prev.map((q) => q.id === id && !q.voted ? { ...q, votes: q.votes + 1, voted: true } : q));
   };
 
   return (
@@ -313,14 +282,7 @@ function QAPanel({
         ) : (
           <div className="p-2 space-y-2">
             {questions.map((q) => (
-              <div
-                key={q.id}
-                className={`p-3 rounded-lg border ${
-                  q.answered
-                    ? 'border-green-500/30 bg-green-900/10'
-                    : 'border-gray-700 bg-gray-800/50'
-                }`}
-              >
+              <div key={q.id} className={`p-3 rounded-lg border ${q.answered ? 'border-green-500/30 bg-green-900/10' : 'border-gray-700 bg-gray-800/50'}`}>
                 <p className="text-sm text-white leading-relaxed">{q.text}</p>
                 <div className="flex items-center justify-between mt-2">
                   <span className="text-[11px] text-gray-500">{q.userName}</span>
@@ -328,17 +290,11 @@ function QAPanel({
                     <button
                       onClick={() => vote(q.id)}
                       disabled={q.voted}
-                      className={`text-xs px-2 py-1 rounded-md transition-colors ${
-                        q.voted
-                          ? 'bg-engagio-600 text-white'
-                          : 'bg-gray-700 text-gray-300 hover:text-white'
-                      }`}
+                      className={`text-xs px-2 py-1 rounded-md transition-colors ${q.voted ? 'bg-engagio-600 text-white' : 'bg-gray-700 text-gray-300 hover:text-white'}`}
                     >
                       ▲ {q.votes}
                     </button>
-                    {q.answered && (
-                      <span className="text-[11px] text-green-400 font-medium">Answered ✓</span>
-                    )}
+                    {q.answered && <span className="text-[11px] text-green-400 font-medium">Answered ✓</span>}
                   </div>
                 </div>
               </div>
@@ -369,18 +325,14 @@ function TabButton({
     <button
       onClick={onClick}
       className={`flex-1 py-3 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
-        active
-          ? 'text-engagio-400 border-b-2 border-engagio-500'
-          : 'text-gray-400 hover:text-white'
+        active ? 'text-engagio-400 border-b-2 border-engagio-500' : 'text-gray-400 hover:text-white'
       }`}
       aria-label={label}
     >
       <Icon className="w-4 h-4" />
       {label}
       {badge && badge > 0 && (
-        <span className="bg-engagio-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">
-          {badge > 9 ? '9+' : badge}
-        </span>
+        <span className="bg-engagio-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">{badge > 9 ? '9+' : badge}</span>
       )}
     </button>
   );
@@ -402,7 +354,13 @@ export default function Sidebar({
   raisedHands,
   chatMessages,
   onAddChatMessage,
+  isTeacher,
+  polls,
+  onCreatePoll,
+  onVotePoll,
 }: SidebarProps) {
+  const pollCount = polls?.filter((p) => p.status === 'active').length ?? 0;
+
   return (
     <>
       {/* Mobile overlay backdrop */}
@@ -427,10 +385,7 @@ export default function Sidebar({
               label="Chat"
               icon={MessageSquare}
               active={tab === 'chat'}
-              onClick={() => {
-                onTabChange('chat');
-                onResetChatCount?.();
-              }}
+              onClick={() => { onTabChange('chat'); onResetChatCount?.(); }}
               badge={tab !== 'chat' ? (unreadChatCount > 0 ? unreadChatCount : undefined) : undefined}
             />
             <TabButton
@@ -446,6 +401,14 @@ export default function Sidebar({
               icon={HelpCircle}
               active={tab === 'qa'}
               onClick={() => onTabChange('qa')}
+            />
+            <TabButton
+              id="poll"
+              label="Polls"
+              icon={BarChart3}
+              active={tab === 'poll'}
+              onClick={() => onTabChange('poll')}
+              badge={pollCount > 0 ? pollCount : undefined}
             />
 
             <button
@@ -482,6 +445,14 @@ export default function Sidebar({
             )}
 
             {tab === 'qa' && <QAPanel socket={socket} sessionId={sessionId} userId={userId} userName={userName} />}
+
+            {tab === 'poll' && <Poll
+              polls={polls || []}
+              userId={userId}
+              isTeacher={isTeacher || false}
+              onCreatePoll={onCreatePoll || (() => {})}
+              onVote={onVotePoll || (() => {})}
+            />}
           </div>
         </div>
       </aside>

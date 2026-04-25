@@ -11,6 +11,7 @@ import { SessionModule } from "./session/session.module";
 import { AnalyticsModule } from "./analytics/analytics.module";
 import { TenancyModule } from "./tenancy/tenancy.module";
 import { LivekitModule } from "./livekit/livekit.module";
+import { PollsModule } from "./polls/polls.module";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 
@@ -28,6 +29,7 @@ import { AppService } from "./app.service";
     SessionModule,
     AnalyticsModule,
     LivekitModule,
+    PollsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
