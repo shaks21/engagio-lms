@@ -611,4 +611,78 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     return { status: "ok", delivered: true };
   }
+
+  /* ──────── Host Moderation ──────── */
+  @SubscribeMessage("room-command")
+  async handleRoomCommand(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; targetUserId: string; action: 'MUTE_MIC' | 'DISABLE_CAM' | 'KICK' | 'LOWER_HAND' },
+  ) {
+    const { sessionId, targetUserId, action } = data;
+    const senderUserId = client.data.userId as string | undefined;
+    this.logger.log(`[ROOM-COMMAND] Received: action=${action}, session=${sessionId}, target=${targetUserId}, sender=${senderUserId}`);
+
+    if (!sessionId || !targetUserId || !action) {
+      return { status: "error", message: "Missing sessionId, targetUserId, or action" };
+    }
+
+    // Verify sender is the TEACHER for this session
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) return { status: "error", message: "Session not found" };
+
+    const isTeacher = session.course?.instructorId === senderUserId;
+    if (!isTeacher) {
+      return { status: "error", message: "Forbidden: only the instructor can issue room commands" };
+    }
+
+    const tenantId = session.tenantId;
+
+    // Find target participant's socket id
+    const room = this.sessions.get(sessionId);
+    let targetSocketId: string | undefined;
+    if (room) {
+      for (const participant of room.participants.values()) {
+        if (participant.userId === targetUserId) {
+          targetSocketId = participant.socketId;
+          break;
+        }
+      }
+    }
+
+    // Emit command to target socket specifically
+    const payload = { action, from: senderUserId, timestamp: new Date().toISOString() };
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit("room-command", payload);
+    }
+    // Fallback: broadcast to session room with targetUserId in payload
+    // so client-side can filter
+    this.server.to(`session::${sessionId}`).emit("room-command", { ...payload, targetUserId });
+
+    // Persist event to Kafka
+    await this.ingest.emitEvent({
+      tenantId,
+      sessionId,
+      type: "TEACHER_INTERVENTION",
+      payload: { targetUserId, senderUserId: senderUserId || "unknown", action },
+      userId: senderUserId || "unknown",
+    });
+
+    // If LOWER_HAND: persist a HAND_RAISE event with raised:false to DB
+    if (action === 'LOWER_HAND') {
+      await this.prisma.engagementEvent.create({
+        data: {
+          tenantId,
+          sessionId,
+          type: "HAND_RAISE" as any,
+          payload: { userId: targetUserId, raised: false },
+          timestamp: new Date(),
+        },
+      });
+    }
+
+    return { status: "ok", action, targetUserId };
+  }
 }

@@ -2,16 +2,19 @@
  * Priority-queue heatmap with:
  *  – Sort: hand-raised first, then lowest-score-first
  *  – Visual: amber glow ring on raised hands
- *  – Action: Zap (Nudge) button per card
+ *  – Action: Zap (Nudge) button + Moderation Menu per card
  */
 
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, LayoutGroup } from 'framer-motion';
-import { Zap } from 'lucide-react';
+import {
+  Zap, MoreVertical, Mic, VideoOff, Hand, LogOut, Shield,
+} from 'lucide-react';
 import api from '@/lib/api';
 import { getSocket } from '@/lib/socket';
+import { useAuth } from '@/lib/auth-context';
 
 /* ── shared types ── */
 export interface LiveScore {
@@ -65,23 +68,101 @@ export function useLiveScores(sessionId: string, intervalMs = 10_000) {
 /* ── priority sort ── */
 function sortLiveScores(scores: LiveScore[]): LiveScore[] {
   return [...scores].sort((a, b) => {
-    // Primary: hand raised (true first)
     const aRaised = !!a.isHandRaised;
     const bRaised = !!b.isHandRaised;
     if (aRaised !== bRaised) return aRaised ? -1 : 1;
     if (aRaised && bRaised) {
-      // Secondary: first to raise → first in queue
       const ta = a.handRaisedAt ? new Date(a.handRaisedAt).getTime() : Infinity;
       const tb = b.handRaisedAt ? new Date(b.handRaisedAt).getTime() : Infinity;
       return ta - tb;
     }
-    // Tertiary: lowest engagement score first (at-risk first)
     return a.score - b.score;
   });
 }
 
+/* ─── Moderation Menu ─── */
+function ModerationMenu({
+  userId,
+  email,
+  handRaised,
+  onCommand,
+}: {
+  userId: string;
+  email: string;
+  handRaised: boolean;
+  onCommand: (userId: string, action: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  /* Dropdown closes only via trigger button or Escape key.
+     Previously a document.click handler raced with React re-renders
+     and closed the menu before Playwright could click confirmation. */
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', handleEsc);
+    return () => document.removeEventListener('keydown', handleEsc);
+  }, []);
+
+  const items = [
+    { action: 'MUTE_MIC', label: 'Mute Microphone', icon: Mic, color: 'text-gray-200' },
+    { action: 'DISABLE_CAM', label: 'Disable Camera', icon: VideoOff, color: 'text-gray-200' },
+    ...(handRaised ? [{ action: 'LOWER_HAND', label: 'Lower Hand', icon: Hand, color: 'text-yellow-400' }] : []),
+    { action: 'KICK', label: 'Kick Student', icon: LogOut, color: 'text-red-400', danger: true },
+  ];
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        data-testid={`moderation-btn-${userId}`}
+        onClick={() => setOpen((o) => !o)}
+        className="p-1.5 rounded-lg hover:bg-gray-700/60 text-gray-400 hover:text-white transition-colors"
+        title="Moderation"
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+
+      {open && (
+        <div className="absolute top-full mt-1 right-0 z-20 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl min-w-[200px] overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-800 flex items-center gap-2">
+            <Shield className="w-3.5 h-3.5 text-engagio-400" />
+            <span className="text-xs font-semibold text-gray-300 uppercase tracking-wider">Moderate</span>
+          </div>
+            {items.map(({ action, label, icon: Icon, color, danger }) => (
+            <button
+              key={action}
+              data-testid={`mod-${action.toLowerCase().replace(/_/g, '-')}-${userId}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onCommand(userId, action);
+                setOpen(false);
+              }}
+              className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors text-left ${
+                danger ? 'text-red-400 hover:bg-red-500/10' : `hover:bg-gray-800 ${color}`
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ─── Individual Card ─── */
-function ParticipantCard({ s, onNudge }: { s: LiveScore; onNudge: (userId: string) => void }) {
+function ParticipantCard({
+  s,
+  onNudge,
+  onCommand,
+}: {
+  s: LiveScore;
+  onNudge: (userId: string) => void;
+  onCommand: (userId: string, action: string) => void;
+}) {
   const cls = getScoreClasses(s.score);
   const handRaised = !!s.isHandRaised;
 
@@ -107,17 +188,25 @@ function ParticipantCard({ s, onNudge }: { s: LiveScore; onNudge: (userId: strin
         transition={{ duration: 0.5 }}
       />
 
-      {/* Score label pill + Zap */}
+      {/* Score label pill + Moderation Menu */}
       <div className="flex items-center justify-between">
         <div className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold text-black ${cls.label}`}>
           {s.score}/100
         </div>
-        <svg className={`w-5 h-5 ${cls.text}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10" />
-          {s.score > 70 && <path d="M14.7 9.3a2.41 2.41 0 0 0-3.4 0 2.41 2.41 0 0 0 0 3.4 2.41 2.41 0 0 0 3.4 0 2.41 2.41 0 0 0 0-3.4z"/>}
-          {s.score < 40 && <path d="M12 8v5"/>}
-          <circle cx="12" cy="17" r="1" />
-        </svg>
+        <div className="flex items-center gap-1">
+          <ModerationMenu
+            userId={s.userId}
+            email={s.email}
+            handRaised={handRaised}
+            onCommand={onCommand}
+          />
+          <svg className={`w-5 h-5 ${cls.text}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10" />
+            {s.score > 70 && <path d="M14.7 9.3a2.41 2.41 0 0 0-3.4 0 2.41 2.41 0 0 0 0 3.4 2.41 2.41 0 0 0 3.4 0 2.41 2.41 0 0 0 0-3.4z"/>}
+            {s.score < 40 && <path d="M12 8v5"/>}
+            <circle cx="12" cy="17" r="1" />
+          </svg>
+        </div>
       </div>
 
       {/* Name */}
@@ -153,23 +242,38 @@ export interface TeacherHeatmapProps {
 }
 
 export default function TeacherHeatmap({ sessionId }: TeacherHeatmapProps) {
-  const { scores, loading, error } = useLiveScores(sessionId);
+  const { userId, tenantId: authTenantId } = useAuth();
+  const tenantId = authTenantId || '';
+  const { scores, loading, error, refetch } = useLiveScores(sessionId);
   const socketRef = useRef<ReturnType<typeof getSocket> | null>(null);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId || !userId) return;  // wait for auth to load
     const sk = getSocket();
     if (!sk.connected) sk.connect();
-    // Ensure we join the session room so nudge broadcasts reach us
-    sk.emit('joinClassroom', { sessionId, role: 'teacher' });
+    sk.emit('joinClassroom', {
+      sessionId,
+      userId,
+      tenantId,
+      courseId: sessionId,
+    });
     socketRef.current = sk;
-  }, [sessionId]);
+  }, [sessionId, userId, tenantId]);
 
   const handleNudge = useCallback((targetUserId: string) => {
     const sk = socketRef.current;
     if (!sk) return;
     sk.emit('send-nudge', { sessionId, targetUserId });
   }, [sessionId]);
+
+  const handleCommand = useCallback((targetUserId: string, action: string) => {
+    const sk = socketRef.current;
+    if (!sk) { console.error(`[handleCommand] no socket, action=${action}`); return; }
+    console.log(`[handleCommand] emitting room-command session=${sessionId} target=${targetUserId} action=${action} connected=${sk.connected} id=${sk.id}`);
+    sk.emit('room-command', { sessionId, targetUserId, action });
+    // Optimistic refetch for near-instant UI feedback
+    setTimeout(() => refetch(), 500);
+  }, [sessionId, refetch]);
 
   const sortedScores = sortLiveScores(scores);
 
@@ -218,7 +322,12 @@ export default function TeacherHeatmap({ sessionId }: TeacherHeatmapProps) {
           className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
         >
           {sortedScores.map((s) => (
-            <ParticipantCard key={s.userId} s={s} onNudge={handleNudge} />
+            <ParticipantCard
+              key={s.userId}
+              s={s}
+              onNudge={handleNudge}
+              onCommand={handleCommand}
+            />
           ))}
         </motion.div>
       </LayoutGroup>

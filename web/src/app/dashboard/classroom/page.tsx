@@ -34,7 +34,7 @@ export default function ClassroomDashboard() {
     if (!selectedCourse || !userId) return;
     setError(null); setLoading(true);
     try {
-      const session = await startSession({ courseId: selectedCourse, userId });
+      const session = await startSession({ courseId: selectedCourse });
       router.push(`/classroom/${session.id}`);
     } catch (e: any) {
       setError(e.response?.data?.message || 'Failed to start session');

@@ -361,6 +361,73 @@ function InnerRoomUI({
     return () => { socket.off('nudge-received', onNudge); };
   }, [socket, addToast]);
 
+  // ── Listen for room commands (host moderation) ──
+  useEffect(() => {
+    if (!socket) return;
+    const onRoomCommand = (data: {
+      action: 'MUTE_MIC' | 'DISABLE_CAM' | 'KICK' | 'LOWER_HAND';
+      from?: string;
+      targetUserId?: string;
+      timestamp?: string;
+    }) => {
+      // Filter: if targetUserId is specified, only act when it matches current user
+      if (data.targetUserId && data.targetUserId !== userId) return;
+
+      switch (data.action) {
+        case 'KICK':
+          addToast({
+            id: `kick_${Date.now()}`,
+            message: 'You have been removed from the session by the teacher',
+            type: 'error',
+          });
+          setTimeout(() => {
+            room.disconnect();
+            router.push('/dashboard?reason=kicked');
+          }, 1500);
+          break;
+        case 'MUTE_MIC':
+          room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+          socket?.emit('engagementEvent', {
+            type: 'MIC',
+            payload: { active: false },
+          });
+          addToast({
+            id: `mute_${Date.now()}`,
+            message: 'Your microphone was muted by the teacher',
+            type: 'warning',
+          });
+          break;
+        case 'DISABLE_CAM':
+          room.localParticipant.setCameraEnabled(false).catch(() => {});
+          socket?.emit('engagementEvent', {
+            type: 'CAMERA',
+            payload: { active: false },
+          });
+          addToast({
+            id: `cam_${Date.now()}`,
+            message: 'Your camera was disabled by the teacher',
+            type: 'warning',
+          });
+          break;
+        case 'LOWER_HAND':
+          setHandRaised(false);
+          if (userId) setRaisedHands((prev) => ({ ...prev, [userId]: false }));
+          socket?.emit('engagementEvent', {
+            type: 'HAND_RAISE',
+            payload: { raised: false },
+          });
+          addToast({
+            id: `hand_${Date.now()}`,
+            message: 'Your hand was lowered by the teacher',
+            type: 'info',
+          });
+          break;
+      }
+    };
+    socket.on('room-command', onRoomCommand);
+    return () => { socket.off('room-command', onRoomCommand); };
+  }, [socket, userId, room, router, addToast]);
+
   return (
       <>
       {/* Floating Header — sticky to avoid overlapping sidebar */}

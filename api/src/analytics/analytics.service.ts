@@ -179,15 +179,19 @@ export class AnalyticsService {
     /* ─────────────── enrich with hand-raise state ─────────────── */
     const handRaises = await this.prisma.engagementEvent.findMany({
       where: { sessionId, tenantId, type: "HAND_RAISE" as EventType },
-      orderBy: { timestamp: "desc" },
+      orderBy: { timestamp: "asc" },  // chronological order
     });
 
-    const lastHandRaiseByUser = new Map<string, Date>();
+    // Track the latest hand-raise state per user
+    const handRaiseState = new Map<string, { raised: boolean; timestamp: Date }>();
     for (const hr of handRaises) {
       const p = hr.payload as { userId?: string; raised?: boolean };
       const uid = p?.userId;
-      if (uid && p?.raised && !lastHandRaiseByUser.has(uid)) {
-        lastHandRaiseByUser.set(uid, hr.timestamp);
+      if (uid) {
+        const current = handRaiseState.get(uid);
+        if (!current || hr.timestamp >= current.timestamp) {
+          handRaiseState.set(uid, { raised: p?.raised ?? true, timestamp: hr.timestamp });
+        }
       }
     }
 
@@ -196,8 +200,8 @@ export class AnalyticsService {
       email: userMap.get(s.userId)?.email ?? "Unknown",
       score: s.score,
       color: s.score > 70 ? "green" : s.score >= 40 ? "yellow" : "red",
-      isHandRaised: lastHandRaiseByUser.has(s.userId),
-      handRaisedAt: lastHandRaiseByUser.get(s.userId) || undefined,
+      isHandRaised: handRaiseState.get(s.userId)?.raised ?? false,
+      handRaisedAt: handRaiseState.get(s.userId)?.raised ? handRaiseState.get(s.userId)?.timestamp : undefined,
     }));
   }
 
