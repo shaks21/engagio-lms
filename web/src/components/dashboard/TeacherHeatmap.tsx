@@ -110,6 +110,7 @@ function ModerationMenu({
     { action: 'MUTE_MIC', label: 'Mute Microphone', icon: Mic, color: 'text-gray-200' },
     { action: 'DISABLE_CAM', label: 'Disable Camera', icon: VideoOff, color: 'text-gray-200' },
     ...(handRaised ? [{ action: 'LOWER_HAND', label: 'Lower Hand', icon: Hand, color: 'text-yellow-400' }] : []),
+    { action: 'TRANSFER_HOST', label: 'Transfer Host', icon: Shield, color: 'text-engagio-400' },
     { action: 'KICK', label: 'Kick Student', icon: LogOut, color: 'text-red-400', danger: true },
   ];
 

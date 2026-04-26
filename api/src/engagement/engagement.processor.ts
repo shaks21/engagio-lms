@@ -114,11 +114,11 @@ export class EngagementProcessor implements OnModuleInit, OnModuleDestroy {
     // Find all active sessions
     const activeSessions = await this.prisma.session.findMany({
       where: { endedAt: null },
-      select: { id: true, userId: true, tenantId: true },
+      select: { id: true, tenantId: true },
     });
 
     for (const session of activeSessions) {
-      // Get events for this session in the last 60s
+      // Get all events for this session in the last 60s, with userId from payload
       const events = await this.prisma.engagementEvent.findMany({
         where: {
           sessionId: session.id,
@@ -129,24 +129,49 @@ export class EngagementProcessor implements OnModuleInit, OnModuleDestroy {
 
       if (events.length === 0) continue;
 
-      // Compute score per user
-      let score = 100; // Start neutral
+      // Group events by userId extracted from payload
+      const eventsByUser = new Map<string, Array<{ type: string; weight: number }>>();
       for (const event of events) {
-        const weight = EVENT_WEIGHTS[event.type] ?? 0;
-        score += weight;
+        const payload = event.payload as Record<string, unknown>;
+        const uid = (payload?.userId as string) || (payload?.user_id as string);
+        if (!uid) continue; // skip events without identifiable user
+        if (!eventsByUser.has(uid)) eventsByUser.set(uid, []);
+        eventsByUser.get(uid)!.push({ type: event.type, weight: EVENT_WEIGHTS[event.type] ?? 0 });
       }
 
-      // Clamp: 0-100
-      score = Math.max(0, Math.min(100, score));
-
-      await this.prisma.engagementSnapshot.create({
-        data: {
-          tenantId: session.tenantId,
-          sessionId: session.id,
-          userId: session.userId,
-          score,
-        },
+      // Also ensure the session host gets a score even with no new events
+      // (their last score carries forward)
+      const hostSnap = await this.prisma.engagementSnapshot.findFirst({
+        where: { sessionId: session.id },
+        orderBy: { timestamp: "desc" },
+        select: { userId: true, score: true },
       });
+      if (hostSnap && !eventsByUser.has(hostSnap.userId)) {
+        eventsByUser.set(hostSnap.userId, []);
+      }
+
+      // Compute score per user
+      for (const [userId, userEvents] of eventsByUser) {
+        let score = 100; // Start neutral
+        for (const ev of userEvents) {
+          score += ev.weight;
+        }
+        // Decay towards 50 if no recent events (passive decay)
+        if (userEvents.length === 0) {
+          score = Math.round(50 + (score - 50) * 0.8);
+        }
+        // Clamp: 0-100
+        score = Math.max(0, Math.min(100, score));
+
+        await this.prisma.engagementSnapshot.create({
+          data: {
+            tenantId: session.tenantId,
+            sessionId: session.id,
+            userId,
+            score,
+          },
+        });
+      }
     }
   }
 }

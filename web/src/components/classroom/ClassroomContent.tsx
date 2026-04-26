@@ -16,6 +16,7 @@ import ToastContainer, { type Toast } from './ToastContainer';
 import type { Message as ChatMessageType } from './Chat';
 import PreJoin from './PreJoin';
 import type { PollData } from './Poll';
+import PollToast from './PollToast';
 
 /* ───────────────── types ───────────────── */
 
@@ -134,6 +135,7 @@ function InnerRoomUI({
 
   // Poll state — lifted here so it survives sidebar unmount
   const [polls, setPolls] = useState<PollData[]>([]);
+  const [activePollToast, setActivePollToast] = useState<PollData | null>(null);
 
   // Chat toast
   const [unreadChatCount, setUnreadChatCount] = useState(0);
@@ -250,9 +252,15 @@ function InnerRoomUI({
     if (!socket) return;
     const onPollCreated = (data: any) => {
       if (!data?.id) return;
+      const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN';
       setPolls((prev) => {
         if (prev.some((p) => p.id === data.id)) return prev;
-        return [...prev, { ...data, status: 'active' as const }];
+        const poll = { ...data, status: 'active' as const };
+        // Non-teachers get a popup modal
+        if (!isTeacher) {
+          setActivePollToast(poll);
+        }
+        return [...prev, poll];
       });
     };
     const onPollVote = (data: any) => {
@@ -460,7 +468,7 @@ function InnerRoomUI({
             raisedHands={raisedHands}
             chatMessages={chatMessages}
             onAddChatMessage={handleAddChatMessage}
-            isTeacher={!!user?.role}
+            isTeacher={user?.role === 'TEACHER' || user?.role === 'ADMIN'}
             polls={polls}
             onCreatePoll={handleCreatePoll}
             onVotePoll={handleVotePoll}
@@ -485,7 +493,7 @@ function InnerRoomUI({
             raisedHands={raisedHands}
             chatMessages={chatMessages}
             onAddChatMessage={handleAddChatMessage}
-            isTeacher={!!user?.role}
+            isTeacher={user?.role === 'TEACHER' || user?.role === 'ADMIN'}
             polls={polls}
             onCreatePoll={handleCreatePoll}
             onVotePoll={handleVotePoll}
@@ -525,6 +533,18 @@ function InnerRoomUI({
           onViewModeChange={setViewMode}
         />
       </div>
+
+      {/* Active Poll Popup Modal */}
+      {activePollToast && (
+        <PollToast
+          poll={activePollToast}
+          onVote={(pid, oid) => {
+            handleVotePoll(pid, oid);
+            setActivePollToast(null);
+          }}
+          onDismiss={() => setActivePollToast(null)}
+        />
+      )}
 
       {/* Toast notifications */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />

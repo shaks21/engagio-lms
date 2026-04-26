@@ -434,6 +434,15 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
         count: (data.payload as { count?: number })?.count ?? 1,
       });
     } else if (data.type === "POLL_CREATED") {
+      /* ── TEACHER-ONLY: validate sender is session instructor ── */
+      const sessionDoc = await this.prisma.session.findFirst({
+        where: { id: sessionId },
+        include: { course: { select: { instructorId: true } } },
+      });
+      const isTeacher = sessionDoc?.course?.instructorId === userId;
+      if (!isTeacher) {
+        return { status: "error", message: "Forbidden: only the teacher can create polls" };
+      }
       this.server.to(sessionSocket).emit("poll-created", {
         id: (data.payload as { id?: string })?.id || "",
         question: (data.payload as { question?: string })?.question || "",
@@ -593,12 +602,32 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     const tenantId = session.tenantId;
 
-    // Emit to the session room — any student joined to that room will receive it
-    this.server.to(`session::${sessionId}`).emit("nudge-received", {
+    /* ── PRIVATE NUDGE: send only to target user ── */
+    // Find the target participant's socket to send directly
+    const room = this.sessions.get(sessionId);
+    let targetSocketId: string | undefined;
+    if (room) {
+      for (const participant of room.participants.values()) {
+        if (participant.userId === targetUserId) {
+          targetSocketId = participant.socketId;
+          break;
+        }
+      }
+    }
+
+    const nudgePayload = {
       message: "Your teacher is checking in on you",
       from: senderUserId,
       timestamp: new Date().toISOString(),
-    });
+    };
+
+    if (targetSocketId) {
+      // Send directly to target socket (private)
+      this.server.to(targetSocketId).emit("nudge-received", nudgePayload);
+    } else {
+      // Fallback: user not currently in room, store for later
+      this.logger.log(`User ${targetUserId} not connected; nudge could not be delivered`);
+    }
 
     // Persist TEACHER_INTERVENTION to Kafka for analytics
     await this.ingest.emitEvent({
@@ -685,4 +714,100 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
 
     return { status: "ok", action, targetUserId };
   }
+
+
+  /* ──────── Host Transfer ──────── */
+  @SubscribeMessage("transfer-host")
+  async handleTransferHost(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; targetUserId: string },
+  ) {
+    const { sessionId, targetUserId } = data;
+    const senderUserId = client.data.userId as string | undefined;
+    this.logger.log(`[TRANSFER-HOST] Received: session=${sessionId}, target=${targetUserId}, sender=${senderUserId}`);
+
+    if (!sessionId || !targetUserId) {
+      return { status: "error", message: "Missing sessionId or targetUserId" };
+    }
+
+    // Verify sender is the current host (instructor or session owner)
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) return { status: "error", message: "Session not found" };
+
+    const isHost = session.course?.instructorId === senderUserId || session.userId === senderUserId;
+    if (!isHost) {
+      return { status: "error", message: "Forbidden: only the current host can transfer host privileges" };
+    }
+
+    // Verify target user exists in the session
+    const room = this.sessions.get(sessionId);
+    let targetInSession = false;
+    if (room) {
+      for (const p of room.participants.values()) {
+        if (p.userId === targetUserId) {
+          targetInSession = true;
+          break;
+        }
+      }
+    }
+    if (!targetInSession) {
+      return { status: "error", message: "Target user is not currently in the session" };
+    }
+
+    // Update session ownership in DB
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { userId: targetUserId },
+    });
+
+    // Optionally update course instructor
+    // await this.prisma.course.update({
+    //   where: { id: session.courseId },
+    //   data: { instructorId: targetUserId },
+    // });
+
+    const tenantId = session.tenantId;
+    const transferPayload = {
+      action: 'TRANSFER_HOST',
+      newHostId: targetUserId,
+      from: senderUserId,
+      timestamp: new Date().toISOString(),
+    };
+
+    // Notify the new host
+    let targetSocketId: string | undefined;
+    if (room) {
+      for (const p of room.participants.values()) {
+        if (p.userId === targetUserId) {
+          targetSocketId = p.socketId;
+          break;
+        }
+      }
+    }
+    if (targetSocketId) {
+      this.server.to(targetSocketId).emit("room-command", transferPayload);
+    }
+
+    // Broadcast to session so all clients know host changed
+    this.server.to(`session::${sessionId}`).emit("host-transferred", {
+      newHostId: targetUserId,
+      from: senderUserId,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Persist event
+    await this.ingest.emitEvent({
+      tenantId,
+      sessionId,
+      type: "TEACHER_INTERVENTION",
+      payload: { targetUserId, senderUserId: senderUserId || "unknown", action: "TRANSFER_HOST" },
+      userId: senderUserId || "unknown",
+    });
+
+    return { status: "ok", newHostId: targetUserId };
+  }
+
 }
