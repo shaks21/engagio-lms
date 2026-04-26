@@ -93,19 +93,20 @@ model Enrollment {
 }
 
 model Session {
-  id            String            @id @default(uuid())
-  tenantId      String
-  tenant        Tenant            @relation(fields: [tenantId], references: [id])
-  courseId      String
-  course        Course            @relation(fields: [courseId], references: [id])
-  userId        String
-  user          User              @relation(fields: [userId], references: [id])
-  classroomCode String            @unique
-  startedAt     DateTime          @default(now())
-  endedAt       DateTime?
-  dwellTime     Int               @default(0)
-  events        EngagementEvent[]
-  polls         Poll[]
+  id             String            @id @default(uuid())
+  tenantId       String
+  tenant         Tenant            @relation(fields: [tenantId], references: [id])
+  courseId       String
+  course         Course            @relation(fields: [courseId], references: [id])
+  userId         String
+  user           User              @relation(fields: [userId], references: [id])
+  classroomCode  String            @unique
+  startedAt      DateTime          @default(now())
+  endedAt        DateTime?
+  dwellTime      Int               @default(0)
+  breakoutConfig Json?             // Map of userId → breakoutRoomId
+  events         EngagementEvent[]
+  polls          Poll[]
 
   @@index([tenantId])
   @@index([userId])

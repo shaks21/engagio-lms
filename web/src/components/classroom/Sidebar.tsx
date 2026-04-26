@@ -19,13 +19,15 @@ import {
   MonitorUp,
   Pin,
   Hand,
+  Layers,
 } from 'lucide-react';
 import type { Participant } from 'livekit-client';
 import { Track } from 'livekit-client';
 import Chat from './Chat';
 import Poll, { type PollData } from './Poll';
+import BreakoutTab from './BreakoutTab';
 
-export type SidebarTab = 'chat' | 'participants' | 'qa' | 'poll';
+export type SidebarTab = 'chat' | 'participants' | 'qa' | 'poll' | 'breakout';
 
 export interface SidebarProps {
   open: boolean;
@@ -410,6 +412,15 @@ export default function Sidebar({
               onClick={() => onTabChange('poll')}
               badge={pollCount > 0 ? pollCount : undefined}
             />
+            {isTeacher && (
+              <TabButton
+                id="breakout"
+                label="Breakout"
+                icon={Layers}
+                active={tab === 'breakout'}
+                onClick={() => onTabChange('breakout')}
+              />
+            )}
 
             <button
               onClick={onClose}
@@ -453,6 +464,12 @@ export default function Sidebar({
               onCreatePoll={onCreatePoll || (() => {})}
               onVote={onVotePoll || (() => {})}
             />}
+
+            {tab === 'breakout' && isTeacher && (
+              <div className="h-full">
+                <BreakoutTab roomName={sessionId} />
+              </div>
+            )}
           </div>
         </div>
       </aside>

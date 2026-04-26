@@ -108,6 +108,97 @@ function useClassroomSocket(
 
 /* ───────────────── Room UI (runs inside LiveKitRoom) ───────────────── */
 
+/** Breakout selective subscription hook.
+ *  Student: subscribes only to participants in same breakout room (or unassigned).
+ *  Teacher: subscribes to all but at LOW video quality to save bandwidth.
+ *  Unassigned (breakoutRoomId === null/empty) = main room, visible to all.
+ */
+function useBreakoutSubscription(room: Room, isTeacher: boolean, userId: string) {
+  const [assignments, setAssignments] = useState<Record<string, string>>({});
+
+  // Fetch breakout assignments from API
+  useEffect(() => {
+    if (!room?.name) return;
+    const token = localStorage.getItem('engagio_token');
+    if (!token) return;
+
+    fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${room.name}/breakouts`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.assignments) setAssignments(data.assignments);
+      })
+      .catch(() => {});
+  }, [room?.name]);
+
+  // Apply selective subscription when participants join/leave or metadata changes
+  useEffect(() => {
+    if (!room) return;
+
+    const apply = () => {
+      // Read local user's breakout assignment
+      let localBreakoutId: string | null = null;
+      try {
+        const meta = JSON.parse(room.localParticipant.metadata || '{}');
+        localBreakoutId = meta.breakoutRoomId || null;
+      } catch {}
+
+      room.remoteParticipants.forEach((participant) => {
+        let participantBreakoutId: string | null = null;
+        try {
+          const meta = JSON.parse(participant.metadata || '{}');
+          participantBreakoutId = meta.breakoutRoomId || null;
+        } catch {}
+
+        if (isTeacher) {
+          // Teacher: subscribe to ALL, but request LOW quality for bandwidth
+          participant.trackPublications.forEach((pub) => {
+            if (pub.kind === Track.Kind.Video && pub.setVideoQuality) {
+              pub.setVideoQuality(0);
+            }
+            // Ensure audio is also subscribed
+            if (pub.kind === Track.Kind.Audio && pub.setSubscribed) {
+              pub.setSubscribed(true);
+            }
+          });
+          return;
+        }
+
+        // Student logic
+        const sameRoom = participantBreakoutId === localBreakoutId;
+        const bothUnassigned = !localBreakoutId && !participantBreakoutId;
+        const shouldSubscribe = sameRoom || bothUnassigned;
+
+        participant.trackPublications.forEach((pub) => {
+          if (
+            pub.kind === Track.Kind.Video ||
+            pub.kind === Track.Kind.Audio
+          ) {
+            if (pub.setSubscribed) {
+              pub.setSubscribed(shouldSubscribe);
+            }
+          }
+        });
+      });
+    };
+
+    apply();
+
+    room.on('participantConnected', apply);
+    room.on('participantDisconnected', apply);
+    room.on('participantMetadataChanged', apply);
+
+    return () => {
+      room.off('participantConnected', apply);
+      room.off('participantDisconnected', apply);
+      room.off('participantMetadataChanged', apply);
+    };
+  }, [room, isTeacher, userId, assignments]);
+
+  return assignments;
+}
+
 function InnerRoomUI({
   sessionId,
   socket,
@@ -118,6 +209,17 @@ function InnerRoomUI({
   const room = useRoomContext();
   const router = useRouter();
   const { user, userId, userName } = useAuth();
+
+  const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN';
+
+  // Hook into breakout selective subscription
+  const breakoutAssignments = useBreakoutSubscription(room, isTeacher, userId || '');
+
+  // Expose room for E2E tests
+  useEffect(() => {
+    (window as any).__lk_room__ = room;
+    return () => { delete (window as any).__lk_room__; };
+  }, [room]);
 
   // Sync media state from LiveKit (polls every 500ms — reliable + no event listener bugs)
   const { micMuted, cameraOff, screenShareActive } = useSyncMediaState(room);

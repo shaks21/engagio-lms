@@ -10,7 +10,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, LayoutGroup } from 'framer-motion';
 import {
-  Zap, MoreVertical, Mic, VideoOff, Hand, LogOut, Shield,
+  Zap, MoreVertical, Mic, VideoOff, Hand, LogOut, Shield, Layers,
 } from 'lucide-react';
 import api from '@/lib/api';
 import { getSocket } from '@/lib/socket';
@@ -24,6 +24,7 @@ export interface LiveScore {
   color: 'green' | 'yellow' | 'red';
   isHandRaised?: boolean;
   handRaisedAt?: string;
+  breakoutRoomId?: string | null;
 }
 
 function getScoreClasses(score: number) {
@@ -284,6 +285,22 @@ export default function TeacherHeatmap({ sessionId }: TeacherHeatmapProps) {
   const atRiskCount  = sortedScores.filter((s) => s.score < 40).length;
   const avgScore     = sortedScores.length ? Math.round(sortedScores.reduce((a, b) => a + b.score, 0) / sortedScores.length) : 0;
 
+  /* Group by breakout room */
+  const grouped = React.useMemo(() => {
+    const g: Record<string, LiveScore[]> = {};
+    for (const s of sortedScores) {
+      const room = s.breakoutRoomId || 'Main Room';
+      if (!g[room]) g[room] = [];
+      g[room].push(s);
+    }
+    // Sort: Main Room first, then alphabetical
+    return Object.entries(g).sort(([a], [b]) => {
+      if (a === 'Main Room') return -1;
+      if (b === 'Main Room') return 1;
+      return a.localeCompare(b);
+    });
+  }, [sortedScores]);
+
   return (
     <div data-testid="teacher-heatmap" className="space-y-6">
       {/* Summary stats */}
@@ -318,19 +335,31 @@ export default function TeacherHeatmap({ sessionId }: TeacherHeatmapProps) {
       )}
 
       <LayoutGroup>
-        <motion.div
-          layout
-          className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
-        >
-          {sortedScores.map((s) => (
-            <ParticipantCard
-              key={s.userId}
-              s={s}
-              onNudge={handleNudge}
-              onCommand={handleCommand}
-            />
-          ))}
-        </motion.div>
+        {grouped.map(([roomName, roomScores]) => (
+          <div key={roomName} className="space-y-3">
+            <div className="flex items-center gap-2 mt-6 first:mt-0">
+              <Layers className="w-4 h-4 text-engagio-400" />
+              <span className="text-sm font-semibold text-engagio-400 uppercase tracking-wider">
+                {roomName}
+              </span>
+              <span className="text-xs text-gray-500">({roomScores.length})</span>
+              <div className="flex-1 h-px bg-gray-800" />
+            </div>
+            <motion.div
+              layout
+              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4"
+            >
+              {roomScores.map((s) => (
+                <ParticipantCard
+                  key={s.userId}
+                  s={s}
+                  onNudge={handleNudge}
+                  onCommand={handleCommand}
+                />
+              ))}
+            </motion.div>
+          </div>
+        ))}
       </LayoutGroup>
 
       {!loading && sortedScores.length === 0 && !error && (

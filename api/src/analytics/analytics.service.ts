@@ -202,6 +202,7 @@ export class AnalyticsService {
       color: s.score > 70 ? "green" : s.score >= 40 ? "yellow" : "red",
       isHandRaised: handRaiseState.get(s.userId)?.raised ?? false,
       handRaisedAt: handRaiseState.get(s.userId)?.raised ? handRaiseState.get(s.userId)?.timestamp : undefined,
+      breakoutRoomId: ((session.breakoutConfig as Record<string, string> | null)?.[s.userId]) ?? null,
     }));
   }
 
