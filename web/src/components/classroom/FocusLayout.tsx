@@ -16,11 +16,21 @@ interface FocusLayoutProps {
   viewMode: ViewMode;
   pinnedParticipantSid?: string;
   onPinParticipant?: (sid: string) => void;
+  isTeacher?: boolean;
 }
 
 /* ─── Name helper ─── */
 function getParticipantName(p: Participant): string {
   return p.name || p.identity || 'Unknown';
+}
+
+function getBreakoutRoomId(p: Participant): string | null {
+  try {
+    const meta = JSON.parse(p.metadata || '{}');
+    return meta.breakoutRoomId || null;
+  } catch {
+    return null;
+  }
 }
 
 /* ─── Safe participant tile that never crashes ─── */
@@ -331,15 +341,25 @@ export default function FocusLayout({
   viewMode,
   pinnedParticipantSid,
   onPinParticipant,
+  isTeacher = false,
 }: FocusLayoutProps) {
   const allParticipants = useParticipants();
   const { localParticipant } = useLocalParticipant();
 
   if (!localParticipant) return null;
 
-  const remoteParticipants = allParticipants.filter(
-    (p) => p.sid !== localParticipant.sid
-  );
+  const myRoomId = getBreakoutRoomId(localParticipant);
+
+  const remoteParticipants = allParticipants.filter((p) => {
+    if (p.sid === localParticipant.sid) return false;
+    if (p.isLocal) return false;
+    // TEACHER: sees everyone. STUDENT: only peers in the same breakout room.
+    if (isTeacher) return true;
+    const theirRoomId = getBreakoutRoomId(p);
+    const sameRoom = myRoomId === theirRoomId;
+    const bothUnassigned = !myRoomId && !theirRoomId;
+    return sameRoom || bothUnassigned;
+  });
 
   /* Detect active screen-share */
   const screenSharingParticipant = React.useMemo(() => {

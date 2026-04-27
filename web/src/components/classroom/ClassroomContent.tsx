@@ -158,16 +158,6 @@ function useBreakoutSubscription(
 
   // Fetch breakout assignments from API
   useEffect(() => {
-    if (!socket) return;
-    const onBroadcastChange = (data: { isBroadcasting: boolean }) => {
-      setIsBroadcasting(data.isBroadcasting);
-    };
-    socket.on('broadcast-state-changed', onBroadcastChange);
-    return () => { socket.off('broadcast-state-changed', onBroadcastChange); };
-  }, [socket]);
-
-  // Fetch breakout assignments from API
-  useEffect(() => {
     if (!room?.name) return;
     const token = localStorage.getItem('engagio_token');
     if (!token) return;
@@ -702,6 +692,7 @@ function InnerRoomUI({
             viewMode={viewMode}
             pinnedParticipantSid={pinnedSid}
             onPinParticipant={handlePinParticipant}
+            isTeacher={isTeacher}
           />
         </main>
       </div>

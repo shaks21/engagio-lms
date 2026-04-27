@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { LogOut, Shuffle, UserPlus, Users, Layers, Radio, RadioOff, Eye } from 'lucide-react';
+import { LogOut, Shuffle, UserPlus, Users, Layers, Radio, RadioOff, Eye, Loader } from 'lucide-react';
 import { useParticipants, useLocalParticipant } from '@livekit/components-react';
 import { useAuth } from '@/lib/auth-context';
 import { useEngagement } from '@/hooks/useEngagement';
@@ -226,6 +226,62 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     return health;
   }, [groups, engagementScores]);
 
+  // ── Close All Rooms handler ──
+  const handleCloseAllRooms = async () => {
+    if (!socket || !roomName) return;
+    setLoading(true);
+    const token = localStorage.getItem('engagio_token');
+    try {
+      // Call backend to clear assignments
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/clear`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token || ''}` },
+      });
+      if (!res.ok) throw new Error(`Close rooms failed: ${res.status}`);
+      setAssignments({});
+    } catch (e) {
+      console.error('[BreakoutTab] Close All Rooms error:', e);
+      alert('Failed to close breakout rooms. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Auto-shuffle handler ──
+  const handleShuffle = async () => {
+    if (!socket || !roomName) return;
+    setLoading(true);
+    const token = localStorage.getItem('engagio_token');
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/auto`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+        body: JSON.stringify({ groupCount: 2 }),
+      });
+      if (!res.ok) throw new Error(`Shuffle failed: ${res.status}`);
+      const data = await res.json();
+      if (data.assignments) setAssignments(data.assignments);
+    } catch (e) {
+      console.error('[BreakoutTab] Shuffle error:', e);
+      alert('Failed to shuffle rooms. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Create Room handler ──
+  const [newRoomName, setNewRoomName] = useState('');
+  const handleCreateRoom = () => {
+    if (!newRoomName.trim()) return;
+    // Create empty room via manual assignment to self
+    setNewRoomName('');
+    // Just adding a new room key
+    setAssignments((prev) => ({
+      ...prev,
+      [`room-${Object.keys(groups).length + 1}`]: newRoomName.trim(),
+    }));
+  };
+
   // Broadcast toggle handler
   const handleToggleBroadcast = () => {
     if (!socket || !roomName) return;
@@ -364,14 +420,26 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
 
       {/* Footer actions */}
       <div className="p-3 border-t border-gray-800 space-y-2">
-        <button
-          onClick={() => { /* placeholder for cleanup */ }}
-          disabled={loading}
-          className="w-full bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 disabled:cursor-not-allowed border border-red-500/30 rounded-lg px-3 py-1.5 text-red-400 text-sm font-medium transition-colors flex items-center justify-center gap-1.5"
-        >
-          <LogOut className="w-4 h-4" />
-          Close All Rooms
-        </button>
+        {isTeacher && (
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleShuffle}
+              disabled={loading || students.length === 0}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/20 hover:bg-engagio-600/30 disabled:opacity-50 border border-engagio-500/30 text-engagio-400 text-xs font-medium transition-colors"
+            >
+              {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Shuffle className="w-4 h-4" />}
+              Shuffle into Rooms
+            </button>
+            <button
+              onClick={handleCloseAllRooms}
+              disabled={loading || Object.keys(assignments).length === 0}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 border border-red-500/30 text-red-400 text-xs font-medium transition-colors"
+            >
+              {loading ? <Loader className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+              Close All Rooms
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
