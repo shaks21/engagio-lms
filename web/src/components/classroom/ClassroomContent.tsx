@@ -108,13 +108,31 @@ function useClassroomSocket(
 
 /* ───────────────── Room UI (runs inside LiveKitRoom) ───────────────── */
 
-/** Breakout selective subscription hook.
+/** Breakout selective subscription hook with AUDIO-ONLY broadcast support.
  *  Student: subscribes only to participants in same breakout room (or unassigned).
- *  Teacher: subscribes to all but at LOW video quality to save bandwidth.
- *  Unassigned (breakoutRoomId === null/empty) = main room, visible to all.
+ *  Teacher: subscribes to all but at LOW video quality.
+ *  BREAKCAST OVERRIDE: When isBroadcasting=true, ALL students subscribe to
+ *  teacher's AUDIO track, but video stays in room isolation.
  */
-function useBreakoutSubscription(room: Room, isTeacher: boolean, userId: string) {
+function useBreakoutSubscription(
+  room: Room,
+  isTeacher: boolean,
+  userId: string,
+  socket: Socket | null,
+  sessionId: string,
+) {
   const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+
+  // Listen for broadcast state changes from backend
+  useEffect(() => {
+    if (!socket) return;
+    const onBroadcastChange = (data: { isBroadcasting: boolean }) => {
+      setIsBroadcasting(data.isBroadcasting);
+    };
+    socket.on('broadcast-state-changed', onBroadcastChange);
+    return () => { socket.off('broadcast-state-changed', onBroadcastChange); };
+  }, [socket]);
 
   // Fetch breakout assignments from API
   useEffect(() => {
@@ -130,14 +148,18 @@ function useBreakoutSubscription(room: Room, isTeacher: boolean, userId: string)
         if (data.assignments) setAssignments(data.assignments);
       })
       .catch(() => {});
-  }, [room?.name]);
 
-  // Apply selective subscription when participants join/leave or metadata changes
+    // Also fetch current broadcast state
+    socket?.emit('get-broadcast-state', { sessionId }, (res: any) => {
+      if (res?.status === 'ok') setIsBroadcasting(res.isBroadcasting);
+    });
+  }, [room?.name, sessionId, socket]);
+
+  // Apply selective subscription + broadcast audio exception
   useEffect(() => {
     if (!room) return;
 
     const apply = () => {
-      // Read local user's breakout assignment
       let localBreakoutId: string | null = null;
       try {
         const meta = JSON.parse(room.localParticipant.metadata || '{}');
@@ -152,35 +174,53 @@ function useBreakoutSubscription(room: Room, isTeacher: boolean, userId: string)
         } catch {}
 
         if (isTeacher) {
-          // Teacher: subscribe to ALL, but request LOW quality for bandwidth
+          // Teacher: subscribe to ALL, LOW quality video for bandwidth
           participant.trackPublications.forEach((pub) => {
             if (pub.kind === Track.Kind.Video && pub.setVideoQuality) {
               pub.setVideoQuality(0);
             }
-            // Ensure audio is also subscribed
-            if (pub.kind === Track.Kind.Audio && pub.setSubscribed) {
-              pub.setSubscribed(true);
-            }
+            if (pub.setSubscribed) pub.setSubscribed(true);
           });
           return;
         }
 
-        // Student logic
+        // ── Student logic ──
         const sameRoom = participantBreakoutId === localBreakoutId;
         const bothUnassigned = !localBreakoutId && !participantBreakoutId;
-        const shouldSubscribe = sameRoom || bothUnassigned;
+
+        // Teacher heuristic: null/unset breakoutRoomId means teacher stays in main room
+        const likelyTeacher = participantBreakoutId === null || participantBreakoutId === '';
+        const isBroadcastTarget = isBroadcasting && likelyTeacher;
 
         participant.trackPublications.forEach((pub) => {
-          if (
-            pub.kind === Track.Kind.Video ||
-            pub.kind === Track.Kind.Audio
-          ) {
-            if (pub.setSubscribed) {
-              pub.setSubscribed(shouldSubscribe);
-            }
+          if (!pub.setSubscribed) return;
+
+          let targetSubscribed = false;
+
+          if (isBroadcastTarget && pub.kind === Track.Kind.Audio) {
+            // AUDIO BROADCAST: force subscribe to teacher audio
+            targetSubscribed = true;
+          } else if (sameRoom || bothUnassigned) {
+            // Normal breakout room isolation
+            targetSubscribed = true;
           }
+
+          pub.setSubscribed(targetSubscribed);
         });
       });
+
+      // Expose broadcast state for E2E introspection (always set, even with 0 participants)
+      (room as any).__breakoutState = {
+        isBroadcasting,
+        localBreakoutId,
+        isTeacher,
+        participants: Array.from(room.remoteParticipants.values()).map((p) => ({
+          identity: p.identity,
+          isSubscribed: Array.from(p.trackPublications.values()).some(
+            (tp) => tp.isSubscribed
+          ),
+        })),
+      };
     };
 
     apply();
@@ -188,15 +228,24 @@ function useBreakoutSubscription(room: Room, isTeacher: boolean, userId: string)
     room.on('participantConnected', apply);
     room.on('participantDisconnected', apply);
     room.on('participantMetadataChanged', apply);
+    // Re-apply when any participant publishes or unpublishes a track
+    room.on('trackPublished', apply);
+    room.on('trackUnpublished', apply);
+
+    // Periodic re-apply ensures async subscription state catches up
+    const interval = setInterval(apply, 2000);
 
     return () => {
       room.off('participantConnected', apply);
       room.off('participantDisconnected', apply);
       room.off('participantMetadataChanged', apply);
+      room.off('trackPublished', apply);
+      room.off('trackUnpublished', apply);
+      clearInterval(interval);
     };
-  }, [room, isTeacher, userId, assignments]);
+  }, [room, isTeacher, userId, assignments, isBroadcasting]);
 
-  return assignments;
+  return { assignments, isBroadcasting };
 }
 
 function InnerRoomUI({
@@ -212,8 +261,8 @@ function InnerRoomUI({
 
   const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN';
 
-  // Hook into breakout selective subscription
-  const breakoutAssignments = useBreakoutSubscription(room, isTeacher, userId || '');
+  // Hook into breakout selective subscription (now returns { assignments, isBroadcasting })
+  const { assignments: breakoutAssignments, isBroadcasting } = useBreakoutSubscription(room, isTeacher, userId || '', socket, sessionId);
 
   // Expose room for E2E tests
   useEffect(() => {
@@ -550,6 +599,14 @@ function InnerRoomUI({
           participantCount={room.numParticipants}
         />
       </div>
+      {/* Student Global Announcement banner when broadcast is active */}
+      {!isTeacher && isBroadcasting && (
+        <div className="sticky top-14 z-40 bg-engagio-600/20 border-b border-engagio-500/30 px-4 py-1.5 text-center">
+          <p className="text-xs font-medium text-engagio-300">
+            🔊 Global Announcement — Your teacher is broadcasting audio to all rooms
+          </p>
+        </div>
+      )}
       <div className="flex-1 flex overflow-hidden relative md:pt-14">
         {/* ── Sidebar ── */}
         {/* Desktop: inline flex; Mobile: hidden by default, conditionally shown */}

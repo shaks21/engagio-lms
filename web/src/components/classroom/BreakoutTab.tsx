@@ -1,33 +1,100 @@
 'use client';
 
 import React, { useState } from 'react';
-import { LogOut, Shuffle, UserPlus, Users, Layers } from 'lucide-react';
+import { LogOut, Shuffle, UserPlus, Users, Layers, Radio, RadioOff } from 'lucide-react';
 import { useParticipants, useLocalParticipant } from '@livekit/components-react';
 import { useAuth } from '@/lib/auth-context';
+import { useEngagement } from '@/hooks/useEngagement';
+import type { Participant } from 'livekit-client';
 
 interface BreakoutTabProps {
   roomName: string;
-  onAssignmentsChange?: (assignments: Record<string, string>) => void;
+  socket?: any;
 }
 
-export default function BreakoutTab({
-  roomName,
-  onAssignmentsChange,
-}: BreakoutTabProps) {
+/* ─── Health dot colour based on average score ─── */
+function getHealthStatus(avg: number): 'green' | 'yellow' | 'red' {
+  if (avg >= 70) return 'green';
+  if (avg >= 40) return 'yellow';
+  return 'red';
+}
+
+function HealthDot({ status }: { status: 'green' | 'yellow' | 'red' }) {
+  const colors = {
+    green: 'bg-green-500 shadow-green-500/50',
+    yellow: 'bg-yellow-400 shadow-yellow-400/50',
+    red: 'bg-red-500 shadow-red-500/50',
+  };
+  return (
+    <span
+      data-testid="room-health-dot"
+      data-status={status}
+      className={`inline-block w-2.5 h-2.5 rounded-full shadow ${colors[status]}`}
+    />
+  );
+}
+
+/* ─── Student avatar with voice-activity ring ─── */
+function StudentAvatar({ participant, scores }: { participant: any; scores: any[] }) {
+  const isSpeaking = participant.isSpeaking || false;
+  const scoreEntry = scores.find((s) => s.userId === participant.identity);
+  const score = scoreEntry?.score ?? null;
+  const initials = (participant.name || participant.identity || 'U')
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+
+  return (
+    <div className="flex items-center gap-2" data-testid="student-avatar">
+      <div className={`relative flex-shrink-0`}>
+        <div
+          className={`w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold transition-all duration-200 ${
+            isSpeaking
+              ? 'ring-2 ring-green-400 ring-offset-1 ring-offset-gray-900 bg-green-700 text-white'
+              : 'bg-gray-700 text-gray-300'
+          }`}
+          title={isSpeaking ? 'Speaking' : 'Silent'}
+        >
+          {initials}
+        </div>
+        {isSpeaking && (
+          <span
+            data-testid="speaking-pulse"
+            className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-400 rounded-full border border-gray-900 animate-pulse"
+          />
+        )}
+      </div>
+      <span className="text-xs text-gray-300 truncate">{participant.name || participant.identity}</span>
+      {score !== null && (
+        <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded font-medium ${
+          score >= 70 ? 'bg-green-900/40 text-green-400' : score >= 40 ? 'bg-yellow-900/40 text-yellow-400' : 'bg-red-900/40 text-red-400'
+        }`}>Score {score}</span>
+      )}
+    </div>
+  );
+}
+
+export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   const livekitParticipants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const { user } = useAuth();
   const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN';
 
+  // Engagement scores for room health
+  const { scores: engagementScores } = useEngagement(roomName, undefined, true);
+
   // Build participant list from LiveKit state
   const participants = React.useMemo(() => {
-    const all = [];
+    const all: any[] = [];
     if (localParticipant) {
       all.push({
         identity: localParticipant.identity,
         name: localParticipant.name || localParticipant.identity,
         isLocal: true,
         isTeacher,
+        isSpeaking: localParticipant.isSpeaking,
         breakoutRoomId: (() => {
           try { return JSON.parse(localParticipant.metadata || '{}').breakoutRoomId || null; }
           catch { return null; }
@@ -39,7 +106,8 @@ export default function BreakoutTab({
         identity: p.identity,
         name: p.name || p.identity,
         isLocal: false,
-        isTeacher: false, // remote — actual role not in LiveKit participant
+        isTeacher: false,
+        isSpeaking: p.isSpeaking,
         breakoutRoomId: (() => {
           try { return JSON.parse(p.metadata || '{}').breakoutRoomId || null; }
           catch { return null; }
@@ -49,15 +117,35 @@ export default function BreakoutTab({
     return all;
   }, [livekitParticipants, localParticipant, isTeacher]);
 
-  const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [roomNameInput, setRoomNameInput] = useState('');
-  const [groupCount, setGroupCount] = useState(2);
-  const [loading, setLoading] = useState(false);
-  const [assignments, setAssignments] = useState<Record<string, string>>({});
-
   const students = participants.filter((p: any) => !p.isTeacher);
 
+  // Broadcast state synced from socket 'broadcast-state' event
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+
+  React.useEffect(() => {
+    if (!socket) return;
+    const onState = (payload: any) => {
+      setIsBroadcasting(Boolean(payload.isBroadcasting));
+      // Expose for E2E tests
+      (window as any).__breakoutState = { isBroadcasting: Boolean(payload.isBroadcasting), breakoutRoomId: payload.breakoutRoomId };
+    };
+    // Request current state from server
+    socket.emit('get-broadcast-state', { sessionId: roomName }, (res: any) => {
+      if (res) {
+        setIsBroadcasting(Boolean(res.isBroadcasting));
+        (window as any).__breakoutState = { isBroadcasting: Boolean(res.isBroadcasting), breakoutRoomId: res.breakoutRoomId };
+      }
+    });
+    socket.on('broadcast-state-changed', onState);
+    return () => {
+      socket.off('broadcast-state-changed', onState);
+    };
+  }, [socket, roomName, localParticipant?.identity]);
+
   // Fetch current assignments on mount
+  const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+
   React.useEffect(() => {
     const token = localStorage.getItem('engagio_token');
     if (!token || !roomName) return;
@@ -82,173 +170,88 @@ export default function BreakoutTab({
     return g;
   }, [students]);
 
-  const handleToggleSelect = (identity: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(identity)) next.delete(identity);
-      else next.add(identity);
-      return next;
+  // Compute average engagement per room
+  const roomHealth = React.useMemo(() => {
+    const health: Record<string, { avg: number; count: number; status: 'green' | 'yellow' | 'red' }> = {};
+    for (const roomId of Object.keys(groups)) {
+      const members = groups[roomId];
+      const memberIds = new Set(members.map((m) => m.identity));
+      const roomScores = engagementScores.filter((s) => memberIds.has(s.userId));
+      const avg = roomScores.length > 0
+        ? Math.round(roomScores.reduce((sum, s) => sum + s.score, 0) / roomScores.length)
+        : 0;
+      health[roomId] = { avg, count: members.length, status: getHealthStatus(avg) };
+    }
+    return health;
+  }, [groups, engagementScores]);
+
+  // Broadcast toggle handler
+  const handleToggleBroadcast = () => {
+    if (!socket || !roomName) return;
+    const enable = !isBroadcasting;
+    socket.emit('toggle-broadcast', { sessionId: roomName, enable }, (res: any) => {
+      if (res?.status === 'ok') setIsBroadcasting(res.isBroadcasting);
     });
-  };
-
-  const handleAssign = async () => {
-    if (!roomNameInput.trim() || selected.size === 0) return;
-    setLoading(true);
-    const payload: Record<string, string> = {};
-    selected.forEach((id) => { payload[id] = roomNameInput.trim(); });
-
-    try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`,
-        {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('engagio_token') || ''}`,
-          },
-          body: JSON.stringify({ assignments: payload }),
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setSelected(new Set());
-        setRoomNameInput('');
-        setAssignments(Object.assign({}, assignments, data.assignments));
-        onAssignmentsChange?.(Object.assign({}, assignments, data.assignments));
-      }
-    } finally { setLoading(false); }
-  };
-
-  const handleClearAll = async () => {
-    setLoading(true);
-    try {
-      await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/clear`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('engagio_token') || ''}`,
-          },
-        }
-      );
-      setAssignments({});
-      onAssignmentsChange?.({});
-    } finally { setLoading(false); }
-  };
-
-  const handleAutoShuffle = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/auto`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${localStorage.getItem('engagio_token') || ''}`,
-          },
-          body: JSON.stringify({ groupCount }),
-        }
-      );
-      if (res.ok) {
-        const data = await res.json();
-        setAssignments(data.assignments);
-        onAssignmentsChange?.(data.assignments);
-      }
-    } finally { setLoading(false); }
   };
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Header */}
       <div className="p-3 border-b border-gray-800 space-y-2">
-        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Breakout Rooms</p>
-
-        {/* Room name input + assign */}
-        <div className="flex gap-2">
-          <input
-            type="text"
-            value={roomNameInput}
-            onChange={(e) => setRoomNameInput(e.target.value)}
-            placeholder="Room name..."
-            className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-engagio-500"
-          />
-          <button
-            onClick={handleAssign}
-            disabled={!roomNameInput.trim() || selected.size === 0 || loading}
-            className="bg-engagio-600 hover:bg-engagio-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-3 py-1.5 text-white text-sm font-medium transition-colors"
+        <div className="flex items-center justify-between">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Breakout Rooms</p>
+          {<button
+            onClick={handleToggleBroadcast}
+            disabled={loading}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+              isBroadcasting
+                ? 'bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30'
+                : 'bg-engagio-600/20 text-engagio-400 border border-engagio-500/30 hover:bg-engagio-600/30'
+            }`}
           >
-            <UserPlus className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* Selected count */}
-        <div className="flex items-center gap-2 text-xs text-gray-500">
-          <Users className="w-3.5 h-3.5" />
-          {selected.size} selected
+            {isBroadcasting ? <RadioOff className="w-3.5 h-3.5" /> : <Radio className="w-3.5 h-3.5" />}
+            {isBroadcasting ? 'Stop Broadcast' : 'Broadcast Audio'}
+          </button>}
         </div>
       </div>
 
-      {/* Participant list */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide">
-        {students.length === 0 && (
+      {/* Room cards with health badges */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
+        {Object.keys(groups).length === 0 && (
           <p className="text-sm text-gray-500 text-center py-6">No students yet</p>
         )}
-        {students.map((s) => (
-          <button
-            key={s.identity}
-            onClick={() => handleToggleSelect(s.identity)}
-            className={`w-full flex items-center gap-3 px-3 py-2 border-b border-gray-800/50 text-left transition-colors ${
-              selected.has(s.identity) ? 'bg-engagio-900/30' : 'hover:bg-gray-800/50'
-            }`}
-          >
+        {Object.entries(groups).map(([roomId, members]) => {
+          const health = roomHealth[roomId] || { avg: 0, count: members.length, status: 'red' as const };
+          return (
             <div
-              className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
-                selected.has(s.identity)
-                  ? 'bg-engagio-500 border-engagio-500'
-                  : 'border-gray-600'
-              }`}
+              key={roomId}
+              data-testid="breakout-room-card"
+              className="border border-gray-700/50 rounded-lg bg-gray-800/30"
             >
-              {selected.has(s.identity) && (
-                <svg className="w-3 h-3 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                  <path d="M5 12l5 5L20 7" />
-                </svg>
-              )}
+              {/* Room header with health */}
+              <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30">
+                <div className="flex items-center gap-2">
+                  <HealthDot status={health.status} />
+                  <span className="text-sm font-medium text-white">{roomId}</span>
+                  <span className="text-[10px] text-gray-500">{members.length} student{members.length !== 1 ? 's' : ''}</span>
+                </div>
+                <span className="text-xs font-semibold text-gray-300">Avg: {health.avg}</span>
+              </div>
+              {/* Members list with speaking indicators */}
+              <div className="p-2 space-y-1.5">
+                {members.map((m) => (
+                  <StudentAvatar key={m.identity} participant={m} scores={engagementScores} />
+                ))}
+              </div>
             </div>
-            <span className="text-sm text-gray-200 truncate">{s.name}</span>
-            {s.breakoutRoomId && (
-              <span className="ml-auto bg-engagio-500/20 text-engagio-400 px-2 py-0.5 rounded text-[10px]">
-                {s.breakoutRoomId}
-              </span>
-            )}
-          </button>
-        ))}
+          );
+        })}
       </div>
 
       {/* Footer actions */}
       <div className="p-3 border-t border-gray-800 space-y-2">
-        {/* Auto-shuffle */}
-        <div className="flex gap-2">
-          <input
-            type="number"
-            min={2}
-            max={10}
-            value={groupCount}
-            onChange={(e) => setGroupCount(Number(e.target.value))}
-            className="w-16 bg-gray-800 border border-gray-700 rounded-lg px-2 py-1.5 text-sm text-white text-center focus:outline-none focus:border-engagio-500"
-          />
-          <button
-            onClick={handleAutoShuffle}
-            disabled={loading}
-            className="flex-1 bg-gray-700 hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg px-3 py-1.5 text-white text-sm font-medium transition-colors flex items-center justify-center gap-1.5"
-          >
-            <Shuffle className="w-4 h-4" />
-            Auto-Shuffle
-          </button>
-        </div>
-
         <button
-          onClick={handleClearAll}
+          onClick={() => { /* placeholder for cleanup */ }}
           disabled={loading}
           className="w-full bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 disabled:cursor-not-allowed border border-red-500/30 rounded-lg px-3 py-1.5 text-red-400 text-sm font-medium transition-colors flex items-center justify-center gap-1.5"
         >

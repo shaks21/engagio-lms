@@ -715,6 +715,54 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     return { status: "ok", action, targetUserId };
   }
 
+  // ── In-memory broadcast state (sessionId -> isBroadcasting) ──
+  private broadcastState = new Map<string, boolean>();
+
+  @SubscribeMessage("toggle-broadcast")
+  async handleToggleBroadcast(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; enable: boolean },
+  ) {
+    const { sessionId, enable } = data;
+    const senderUserId = client.data.userId as string | undefined;
+    this.logger.log(`[TOGGLE-BROADCAST] session=${sessionId}, enable=${enable}, sender=${senderUserId}`);
+
+    if (!sessionId) {
+      return { status: "error", message: "Missing sessionId" };
+    }
+
+    // Verify sender is instructor
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) return { status: "error", message: "Session not found" };
+
+    const isTeacher = session.course?.instructorId === senderUserId;
+    if (!isTeacher) {
+      return { status: "error", message: "Forbidden: only the instructor can toggle broadcast" };
+    }
+
+    this.broadcastState.set(sessionId, enable);
+
+    // Broadcast state change to ALL participants in session
+    this.server.to(`session::${sessionId}`).emit("broadcast-state-changed", {
+      isBroadcasting: enable,
+      teacherUserId: senderUserId,
+    });
+
+    return { status: "ok", isBroadcasting: enable };
+  }
+
+  @SubscribeMessage("get-broadcast-state")
+  async handleGetBroadcastState(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string },
+  ) {
+    const isBroadcasting = this.broadcastState.get(data.sessionId) ?? false;
+    return { status: "ok", isBroadcasting };
+  }
+
 
   /* ──────── Host Transfer ──────── */
   @SubscribeMessage("transfer-host")

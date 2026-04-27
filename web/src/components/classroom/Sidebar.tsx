@@ -325,6 +325,7 @@ function TabButton({
 }) {
   return (
     <button
+      data-testid={`sidebar-tab-${id}`}
       onClick={onClick}
       className={`flex-1 py-3 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
         active ? 'text-engagio-400 border-b-2 border-engagio-500' : 'text-gray-400 hover:text-white'
@@ -467,7 +468,7 @@ export default function Sidebar({
 
             {tab === 'breakout' && isTeacher && (
               <div className="h-full">
-                <BreakoutTab roomName={sessionId} />
+                <BreakoutTab roomName={sessionId} socket={socket} />
               </div>
             )}
           </div>
