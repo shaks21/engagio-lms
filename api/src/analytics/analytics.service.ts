@@ -217,4 +217,14 @@ export class AnalyticsService {
       select: { id: true, session: { select: { userId: true } }, type: true, timestamp: true },
     });
   }
+
+  async getSessionEvents(tenantId: string, sessionId: string, type?: string) {
+    const where: any = { sessionId, tenantId };
+    if (type) where.type = type;
+    return await this.prisma.engagementEvent.findMany({
+      where,
+      orderBy: { timestamp: "desc" },
+      take: 50,
+    });
+  }
 }

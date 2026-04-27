@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { LogOut, Shuffle, UserPlus, Users, Layers, Radio, RadioOff } from 'lucide-react';
+import { LogOut, Shuffle, UserPlus, Users, Layers, Radio, RadioOff, Eye } from 'lucide-react';
 import { useParticipants, useLocalParticipant } from '@livekit/components-react';
 import { useAuth } from '@/lib/auth-context';
 import { useEngagement } from '@/hooks/useEngagement';
@@ -142,6 +142,47 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     };
   }, [socket, roomName, localParticipant?.identity]);
 
+  // Monitor state synced from socket
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [monitorTarget, setMonitorTarget] = useState<string | null>(null);
+  const [peekMode, setPeekMode] = useState(true);
+
+  React.useEffect(() => {
+    if (!socket) return;
+    const onMonitorState = (payload: any) => {
+      if (payload.action === 'START_MONITOR') {
+        setIsMonitoring(true);
+        setMonitorTarget(payload.roomId);
+        setPeekMode(payload.peekMode !== false);
+      } else if (payload.action === 'STOP_MONITOR') {
+        setIsMonitoring(false);
+        setMonitorTarget(null);
+      }
+      // Expose for E2E tests
+      (window as any).__breakoutState = {
+        ...((window as any).__breakoutState || {}),
+        isMonitoring: payload.action === 'START_MONITOR',
+        monitorTarget: payload.roomId || null,
+        peekMode: payload.peekMode !== false,
+      };
+    };
+    socket.emit('get-monitor-state', { sessionId: roomName }, (res: any) => {
+      if (res?.monitorTarget) {
+        setIsMonitoring(true);
+        setMonitorTarget(res.monitorTarget);
+        setPeekMode(res.peekMode !== false);
+      }
+      (window as any).__breakoutState = {
+        ...((window as any).__breakoutState || {}),
+        isMonitoring: !!res?.monitorTarget,
+        monitorTarget: res?.monitorTarget || null,
+        peekMode: res?.peekMode !== false,
+      };
+    });
+    socket.on('teacher-monitor-state', onMonitorState);
+    return () => { socket.off('teacher-monitor-state', onMonitorState); };
+  }, [socket, roomName]);
+
   // Fetch current assignments on mount
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -196,23 +237,71 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header */}
+      {/* Header with monitoring controls */}
       <div className="p-3 border-b border-gray-800 space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Breakout Rooms</p>
-          {<button
-            onClick={handleToggleBroadcast}
-            disabled={loading}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              isBroadcasting
-                ? 'bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30'
-                : 'bg-engagio-600/20 text-engagio-400 border border-engagio-500/30 hover:bg-engagio-600/30'
-            }`}
-          >
-            {isBroadcasting ? <RadioOff className="w-3.5 h-3.5" /> : <Radio className="w-3.5 h-3.5" />}
-            {isBroadcasting ? 'Stop Broadcast' : 'Broadcast Audio'}
-          </button>}
+          <div className="flex items-center gap-2">
+            {/* Peek Visibility toggle */}
+            {isTeacher && (
+              <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  data-testid="peek-visibility-toggle"
+                  checked={peekMode}
+                  onChange={(e) => setPeekMode(e.target.checked)}
+                  className="w-3 h-3 accent-engagio-500 rounded"
+                />
+                Peek
+              </label>
+            )}
+            {/* Notify toggle */}
+            {isTeacher && (
+              <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  data-testid="notify-students-toggle"
+                  checked={!peekMode}
+                  onChange={(e) => setPeekMode(!e.target.checked)}
+                  className="w-3 h-3 accent-engagio-500 rounded"
+                />
+                Notify
+              </label>
+            )}
+            <button
+              onClick={handleToggleBroadcast}
+              disabled={loading}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                isBroadcasting
+                  ? 'bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30'
+                  : 'bg-engagio-600/20 text-engagio-400 border border-engagio-500/30 hover:bg-engagio-600/30'
+              }`}
+            >
+              {isBroadcasting ? <RadioOff className="w-3.5 h-3.5" /> : <Radio className="w-3.5 h-3.5" />}
+              {isBroadcasting ? 'Stop Broadcast' : 'Broadcast Audio'}
+            </button>
+          </div>
         </div>
+        {/* Active monitoring indicator */}
+        {isMonitoring && monitorTarget && (
+          <div className="flex items-center justify-between bg-yellow-900/20 border border-yellow-500/20 rounded-md px-2.5 py-1">
+            <span className="text-[10px] text-yellow-400">
+              {peekMode ? '👻' : '👁'} Monitoring {monitorTarget} ({peekMode ? 'invisible' : 'visible'})
+            </span>
+            <button
+              onClick={() => {
+                if (!socket) return;
+                socket.emit('stop-monitor', { sessionId: roomName }, (res: any) => {
+                  if (res?.status === 'ok') { setIsMonitoring(false); setMonitorTarget(null); }
+                });
+              }}
+              data-testid="stop-monitor"
+              className="text-[10px] text-yellow-400 hover:text-yellow-300 transition-colors"
+            >
+              Stop
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Room cards with health badges */}
@@ -228,14 +317,39 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
               data-testid="breakout-room-card"
               className="border border-gray-700/50 rounded-lg bg-gray-800/30"
             >
-              {/* Room header with health */}
+              {/* Room header with health + monitor button */}
               <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30">
                 <div className="flex items-center gap-2">
                   <HealthDot status={health.status} />
                   <span className="text-sm font-medium text-white">{roomId}</span>
                   <span className="text-[10px] text-gray-500">{members.length} student{members.length !== 1 ? 's' : ''}</span>
                 </div>
-                <span className="text-xs font-semibold text-gray-300">Avg: {health.avg}</span>
+                <div className="flex items-center gap-2">
+                  {isTeacher && !isMonitoring && (
+                    <button
+                      onClick={() => {
+                        if (!socket) return;
+                        const notify = !peekMode;
+                        socket.emit('monitor-room', {
+                          sessionId: roomName,
+                          roomId,
+                          peekMode,
+                          notify,
+                        }, (res: any) => {
+                          if (res?.status === 'ok') {
+                            setIsMonitoring(true);
+                            setMonitorTarget(roomId);
+                          }
+                        });
+                      }}
+                      data-testid={`monitor-room-${roomId}`}
+                      className="text-[10px] text-engagio-400 hover:text-engagio-300 transition-colors flex items-center gap-0.5"
+                    >
+                      <Eye className="w-3 h-3" /> Monitor
+                    </button>
+                  )}
+                  <span className="text-xs font-semibold text-gray-300">Avg: {health.avg}</span>
+                </div>
               </div>
               {/* Members list with speaking indicators */}
               <div className="p-2 space-y-1.5">

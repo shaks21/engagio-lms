@@ -341,11 +341,31 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
       return { status: "error", message: "Not joined to a classroom" };
     }
 
+    // ── LOOKUP breakoutRoomId from session config ──
+    // Fetch session breakoutConfig and inject breakoutRoomId into payload
+    let breakoutRoomId: string | null = null;
+    try {
+      const sessionConfig = await this.prisma.session.findFirst({
+        where: { id: sessionId },
+        select: { breakoutConfig: true },
+      });
+      if (sessionConfig?.breakoutConfig) {
+        breakoutRoomId = (sessionConfig.breakoutConfig as Record<string, string>)[userId || ''] || null;
+      }
+    } catch (e) {}
+
+    const enrichedPayload = {
+      ...(data.payload || {}),
+      breakoutRoomId,
+      userId: userId || 'unknown',
+      userName: userName || undefined,
+    };
+
     await this.ingest.emitEvent({
       tenantId,
       sessionId,
       type: data.type,
-      payload: data.payload,
+      payload: enrichedPayload,
       userId: userId || "unknown",
     });
 
@@ -763,7 +783,73 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     return { status: "ok", isBroadcasting };
   }
 
+  // ── In-memory room monitoring state (sessionId -> { target: string, peekMode: boolean }) ──
+  private monitorState = new Map<string, { target: string; peekMode: boolean; notify: boolean }>();
 
+  @SubscribeMessage("monitor-room")
+  async handleMonitorRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; roomId: string; peekMode?: boolean; notify?: boolean },
+  ) {
+    const { sessionId, roomId, peekMode = true, notify = true } = data;
+    const senderUserId = client.data.userId as string | undefined;
+
+    // Verify sender is instructor
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) return { status: "error", message: "Session not found" };
+    const isTeacher = session.course?.instructorId === senderUserId;
+    if (!isTeacher) return { status: "error", message: "Forbidden: only the instructor can monitor rooms" };
+
+    this.monitorState.set(sessionId, { target: roomId, peekMode, notify });
+
+    // Emit to all participants in the session
+    // In peek mode: notify = false means "ghost" (students dont see teacher)
+    // In join mode: notify = true means "announced" (students DO see teacher)
+    this.server.to(`session::${sessionId}`).emit("teacher-monitor-state", {
+      sessionId,
+      roomId,
+      teacherUserId: senderUserId,
+      peekMode,
+      notify,
+      action: "START_MONITOR",
+    });
+
+    return { status: "ok", monitorTarget: roomId, peekMode, notify };
+  }
+
+  @SubscribeMessage("stop-monitor")
+  async handleStopMonitor(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string },
+  ) {
+    const { sessionId } = data;
+    const senderUserId = client.data.userId as string | undefined;
+
+    this.monitorState.delete(sessionId);
+
+    this.server.to(`session::${sessionId}`).emit("teacher-monitor-state", {
+      sessionId,
+      roomId: null,
+      teacherUserId: senderUserId,
+      action: "STOP_MONITOR",
+    });
+
+    return { status: "ok" };
+  }
+
+  @SubscribeMessage("get-monitor-state")
+  async handleGetMonitorState(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string },
+  ) {
+    const state = this.monitorState.get(data.sessionId);
+    return { status: "ok", monitorTarget: state?.target || null, peekMode: state?.peekMode ?? true, notify: state?.notify ?? true };
+  }
+
+  /* ──────── Host Transfer ──────── */
   /* ──────── Host Transfer ──────── */
   @SubscribeMessage("transfer-host")
   async handleTransferHost(

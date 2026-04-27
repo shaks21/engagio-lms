@@ -134,6 +134,38 @@ function useBreakoutSubscription(
     return () => { socket.off('broadcast-state-changed', onBroadcastChange); };
   }, [socket]);
 
+  // Listen for teacher monitor state changes (students monitor teacher state)
+  useEffect(() => {
+    if (!socket) return;
+    const onTeacherMonitor = (payload: any) => {
+      const state = {
+        isMonitoring: payload.action === "START_MONITOR",
+        monitorTarget: payload.roomId || null,
+        peekMode: payload.peekMode !== false,
+        notify: payload.notify !== false,
+        action: payload.action,
+      };
+      (window as any).__breakoutState = {
+        ...((window as any).__breakoutState || {}),
+        isMonitoring: state.isMonitoring,
+        monitorTarget: state.monitorTarget,
+        peekMode: state.peekMode,
+      };
+    };
+    socket.on("teacher-monitor-state", onTeacherMonitor);
+    return () => { socket.off("teacher-monitor-state", onTeacherMonitor); };
+  }, [socket]);
+
+  // Fetch breakout assignments from API
+  useEffect(() => {
+    if (!socket) return;
+    const onBroadcastChange = (data: { isBroadcasting: boolean }) => {
+      setIsBroadcasting(data.isBroadcasting);
+    };
+    socket.on('broadcast-state-changed', onBroadcastChange);
+    return () => { socket.off('broadcast-state-changed', onBroadcastChange); };
+  }, [socket]);
+
   // Fetch breakout assignments from API
   useEffect(() => {
     if (!room?.name) return;
@@ -210,7 +242,7 @@ function useBreakoutSubscription(
       });
 
       // Expose broadcast state for E2E introspection (always set, even with 0 participants)
-      (room as any).__breakoutState = {
+      const state = {
         isBroadcasting,
         localBreakoutId,
         isTeacher,
@@ -220,6 +252,11 @@ function useBreakoutSubscription(
             (tp) => tp.isSubscribed
           ),
         })),
+      };
+      (room as any).__breakoutState = state;
+      (window as any).__breakoutState = {
+        ...((window as any).__breakoutState || {}),
+        ...state,
       };
     };
 

@@ -61,4 +61,13 @@ export class AnalyticsController {
   ) {
     return this.analyticsService.getLiveScores(req.tenantId, sessionId);
   }
+
+  @Get("session/:id/events")
+  async getSessionEvents(
+    @Request() req,
+    @Param("id") sessionId: string,
+    @Query("type") type?: string,
+  ) {
+    return this.analyticsService.getSessionEvents(req.tenantId, sessionId, type);
+  }
 }
