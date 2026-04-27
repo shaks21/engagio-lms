@@ -58,10 +58,15 @@ export class BreakoutService {
       }
     }
 
-    // Persist in Prisma as source-of-truth fallback
+    // Persist in Prisma as source-of-truth fallback — MERGE with existing config
+    const current = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      select: { breakoutConfig: true },
+    });
+    const existing = (current?.breakoutConfig ?? {}) as Record<string, string>;
     await this.prisma.session.update({
       where: { id: sessionId },
-      data: { breakoutConfig: assignments as any },
+      data: { breakoutConfig: { ...existing, ...assignments } as any },
     });
 
     return assignments;
