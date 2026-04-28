@@ -8,15 +8,17 @@ interface FilmstripProps {
   pinnedParticipantSid?: string;
   onPinParticipant?: (sid: string) => void;
   visible?: boolean;
+  participants?: any[]; // shard override
 }
 
 export default function Filmstrip({
   pinnedParticipantSid,
   onPinParticipant,
   visible = true,
+  participants: participantsOverride,
 }: FilmstripProps) {
-  const allParticipants = useParticipants();
-  const { localParticipant } = useLocalParticipant();
+  const rawParticipants = useParticipants();
+  const allParticipants = participantsOverride ?? rawParticipants;
 
   if (!visible || allParticipants.length === 0) return null;
 
@@ -26,7 +28,7 @@ export default function Filmstrip({
         <VideoTile
           key={participant.sid}
           participant={participant}
-          isLocal={participant.sid === localParticipant?.sid}
+          isLocal={false} // local is rendered by FocusLayout MainView
           isPinned={pinnedParticipantSid === participant.sid}
           isMainSpeaker={false}
           onClick={() => onPinParticipant?.(participant.sid)}

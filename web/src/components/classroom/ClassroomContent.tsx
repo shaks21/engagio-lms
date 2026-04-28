@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { LiveKitRoom, useRoomContext } from '@livekit/components-react';
 import { Room, Track } from 'livekit-client';
@@ -291,6 +291,17 @@ function InnerRoomUI({
 
   // Hook into breakout selective subscription (now returns { assignments, isBroadcasting })
   const { assignments: breakoutAssignments, isBroadcasting } = useBreakoutSubscription(room, isTeacher, userId || '', socket, sessionId);
+
+  // Compute local breakout room ID for visual isolation
+  const localBreakoutId = useMemo(() => {
+    try {
+      return JSON.parse(room.localParticipant.metadata || '{}').breakoutRoomId || null;
+    } catch {
+      return null;
+    }
+  }, [room.localParticipant.metadata]);
+
+  const shardLabel = localBreakoutId ? localBreakoutId : undefined;
 
   // Expose room for E2E tests
   useEffect(() => {
@@ -707,6 +718,7 @@ function InnerRoomUI({
             pinnedParticipantSid={pinnedSid}
             onPinParticipant={handlePinParticipant}
             isTeacher={isTeacher}
+            shardLabel={shardLabel}
           />
         </main>
       </div>

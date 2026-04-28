@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { RoomServiceClient } from 'livekit-server-sdk';
+import { RoomServiceClient, ParticipantPermission } from 'livekit-server-sdk';
 import { PrismaService } from '../prisma/prisma.service';
 
 export interface BreakoutAssignments {
@@ -244,8 +244,8 @@ export class BreakoutService {
    */
   static roundRobin(participants: string[], groupCount: number): Record<string, string> {
     const MAX_ROOMS = 25;
-    if (participants.length === 0 || groupCount < 2) return {};
-    groupCount = Math.min(groupCount, participants.length, MAX_ROOMS);
+    if (groupCount < 2 || groupCount > MAX_ROOMS) groupCount = Math.min(Math.max(groupCount, 2), MAX_ROOMS);
+    groupCount = Math.min(groupCount, MAX_ROOMS);
 
     // Fisher-Yates shuffle for randomness
     const shuffled = [...participants];
@@ -268,7 +268,13 @@ export class BreakoutService {
    */
   static autoShuffle(participants: string[], groupCount: number): Record<string, string>[] {
     const assignments = BreakoutService.roundRobin(participants, groupCount);
-    if (Object.keys(assignments).length === 0) return [];
+    if (Object.keys(assignments).length === 0) {
+      // Empty-room pre-provisioning: return stub rooms with no members
+      const roomCount = Math.min(Math.max(groupCount, 2), 25);
+      return Array.from({ length: roomCount }, (_, i) => ({
+        [`room-${String.fromCharCode(97 + i)}`]: `room-${String.fromCharCode(97 + i)}`,
+      }));
+    }
 
     // Group back into per-room objects for controller compat
     const groups = new Map<string, Record<string, string>>();

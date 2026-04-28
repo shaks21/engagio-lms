@@ -17,6 +17,7 @@ interface FocusLayoutProps {
   pinnedParticipantSid?: string;
   onPinParticipant?: (sid: string) => void;
   isTeacher?: boolean;
+  shardLabel?: string; // e.g. "Breakout Room: room-a"
 }
 
 /* ─── Name helper ─── */
@@ -342,6 +343,7 @@ export default function FocusLayout({
   pinnedParticipantSid,
   onPinParticipant,
   isTeacher = false,
+  shardLabel,
 }: FocusLayoutProps) {
   const allParticipants = useParticipants();
   const { localParticipant } = useLocalParticipant();
@@ -392,6 +394,14 @@ export default function FocusLayout({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative">
+      {shardLabel && (
+        <div className="px-3 py-1.5 bg-gray-800/70 border-b border-gray-700/40 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-engagio-500 animate-pulse" />
+            <span className="text-xs font-semibold text-engagio-400">Breakout Room: {shardLabel}</span>
+          </div>
+        </div>
+      )}
       {/* ── Main stage ── */}
       <div className="flex-1 overflow-hidden relative">
         {remoteParticipants.length === 0 && !focusedParticipant ? (

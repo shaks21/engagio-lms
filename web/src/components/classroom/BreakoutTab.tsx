@@ -5,6 +5,7 @@ import { LogOut, Shuffle, Users, Layers, Radio, RadioOff, Eye, Loader, Move, Plu
 import { useParticipants, useLocalParticipant } from '@livekit/components-react';
 import { useAuth } from '@/lib/auth-context';
 import { useEngagement } from '@/hooks/useEngagement';
+import RoomMonitorModal from './RoomMonitorModal';
 
 interface BreakoutTabProps {
   roomName: string;
@@ -16,8 +17,7 @@ interface Student {
   identity: string;
   name: string;
   isLocal: boolean;
-  isTeacher: boolean;
-  isSpeaking: boolean;
+  isTeacher: boolean;  isSpeaking: boolean;
   breakoutRoomId: string | null;
 }
 
@@ -148,6 +148,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [monitorTarget, setMonitorTarget] = useState<string | null>(null);
   const [peekMode, setPeekMode] = useState(true);
+  const [showMonitorModal, setShowMonitorModal] = useState(false);
 
   /* derived computed assignments merged from backend + local overrides */
   const mergedAssignments = useMemo(() => {
@@ -612,7 +613,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                       <span data-testid="room-student-count" className="text-[10px] text-gray-500">{members.length} student{members.length !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {isTeacher && !isMonitoring && (
+                      {isTeacher && (
                         <button
                           onClick={() => {
                             if (!socket) return;
@@ -626,6 +627,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                               if (res?.status === 'ok') {
                                 setIsMonitoring(true);
                                 setMonitorTarget(roomId);
+                                setShowMonitorModal(true);
                               }
                             });
                           }}
@@ -648,6 +650,22 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
             })}
           </div>
         </>
+      )}
+
+      {showMonitorModal && monitorTarget && (
+        <RoomMonitorModal
+          roomCode={monitorTarget}
+          onClose={() => {
+            setShowMonitorModal(false);
+            setIsMonitoring(false);
+            setMonitorTarget(null);
+            if (socket) {
+              socket.emit('stop-monitor', { sessionId: roomName }, (res: any) => {
+                if (res?.status === 'ok') { setIsMonitoring(false); setMonitorTarget(null); }
+              });
+            }
+          }}
+        />
       )}
     </div>
   );

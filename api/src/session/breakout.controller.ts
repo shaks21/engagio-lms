@@ -73,7 +73,7 @@ export class BreakoutController {
     let participants: string[] = body.participants ?? [];
     if (participants.length === 0) {
       const roomInfo = await this.breakoutService.listParticipants(sessionId);
-      participants = roomInfo.filter((p) => p !== req.user.id);
+      participants = roomInfo; // include everyone — teacher included for allocation
     }
 
     const algorithm = body.algorithm ?? 'ROUND_ROBIN';
