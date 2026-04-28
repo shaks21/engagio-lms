@@ -375,6 +375,7 @@ export default function Sidebar({
         />
       )}
       <aside
+        data-testid="classroom-sidebar"
         className={`sidebar-panel bg-edu-slate border-l border-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ${
           open ? 'w-72 sm:w-80' : 'w-0'
         }`}
