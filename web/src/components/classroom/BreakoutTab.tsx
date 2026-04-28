@@ -115,6 +115,8 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
       });
     }
     livekitParticipants.forEach((p) => {
+      /* skip duplicate of local participant (livekit sometimes includes it) */
+      if (localParticipant && p.identity === localParticipant.identity) return;
       all.push({
         identity: p.identity,
         name: p.name || p.identity,
@@ -131,6 +133,11 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   }, [livekitParticipants, localParticipant, isTeacher]);
 
   const students = participants.filter((p) => !p.isTeacher);
+
+  /* deduplicated student count (excludes duplicate identity entries) */
+  const studentCount = useMemo(() => {
+    return new Set(students.map((s) => s.identity)).size;
+  }, [students]);
 
   /* ── state ── */
   const [roomCount, setRoomCount] = useState(2);
@@ -327,10 +334,10 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
 
   /* compute per-room capacity hint */
   const capacityHint = useMemo(() => {
-    if (students.length === 0) return '';
-    const perRoom = Math.ceil(students.length / roomCount);
+    if (studentCount === 0) return '';
+    const perRoom = Math.ceil(studentCount / roomCount);
     return `~${perRoom} student${perRoom !== 1 ? 's' : ''} per room`;
-  }, [students.length, roomCount]);
+  }, [studentCount, roomCount]);
 
   /* room IDs for rendering (excluding 'main') */
   const roomIds = useMemo(() => {
@@ -423,12 +430,18 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                 onChange={(e) => setRoomCount(parseInt(e.target.value, 10))}
                 className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:border-engagio-500"
               >
-                {Array.from({ length: MAX_ROOMS }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
+                {Array.from({ length: MAX_ROOMS }, (_, i) => i + 1).map((n) => {
+                  const perRoom = studentCount > 0 ? Math.ceil(studentCount / n) : 0;
+                  const label = studentCount > 0
+                    ? `${n} room${n !== 1 ? 's' : ''} (~${perRoom} each)`
+                    : `${n} room${n !== 1 ? 's' : ''}`;
+                  return (
+                    <option key={n} value={n}>{label}</option>
+                  );
+                })}
               </select>
               <span data-testid="room-capacity-hint" className="text-[10px] text-gray-500">
-                {students.length > 0 ? capacityHint : 'No students'}
+                {studentCount > 0 ? capacityHint : 'No students'}
               </span>
             </div>
 
