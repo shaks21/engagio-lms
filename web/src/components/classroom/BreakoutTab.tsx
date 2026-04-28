@@ -117,11 +117,16 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     livekitParticipants.forEach((p) => {
       /* skip duplicate of local participant (livekit sometimes includes it) */
       if (localParticipant && p.identity === localParticipant.identity) return;
+      // Derive teacher status from LiveKit metadata if available, else false
+      const remoteRole = (() => {
+        try { return JSON.parse(p.metadata || '{}').role || ''; }
+        catch { return ''; }
+      })();
       all.push({
         identity: p.identity,
         name: p.name || p.identity,
         isLocal: false,
-        isTeacher: false,
+        isTeacher: remoteRole === 'teacher' || remoteRole === 'TEACHER',
         isSpeaking: p.isSpeaking,
         breakoutRoomId: (() => {
           try { return JSON.parse(p.metadata || '{}').breakoutRoomId || null; }
@@ -133,6 +138,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   }, [livekitParticipants, localParticipant, isTeacher]);
 
   const students = participants.filter((p) => !p.isTeacher);
+  const totalParticipants = participants.length;
 
   /* deduplicated student count (excludes duplicate identity entries) */
   const studentCount = useMemo(() => {
@@ -449,7 +455,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
             <div className="flex items-center gap-2">
               <button
                 onClick={handleShuffle}
-                disabled={loading || students.length === 0}
+                disabled={loading || totalParticipants === 0}
                 className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/20 hover:bg-engagio-600/30 disabled:opacity-50 border border-engagio-500/30 text-engagio-400 text-xs font-medium transition-colors"
               >
                 {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Shuffle className="w-4 h-4" />}
@@ -576,7 +582,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
         <>
           <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
             {Object.keys(groups).length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-6">No students yet</p>
+              <p className="text-sm text-gray-500 text-center py-6">No participants yet</p>
             )}
             {Object.entries(groups).map(([roomId, members]) => {
               if (roomId === 'main') {

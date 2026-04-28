@@ -82,9 +82,20 @@ export class BreakoutService {
     }
 
     // Update each participant's metadata + permissions in LiveKit
+    // Fetch existing metadata so we don't overwrite role/displayName
+    let currentRoomParticipants: any[] = [];
+    try {
+      currentRoomParticipants = await this.roomService.listParticipants(sessionId);
+    } catch { /* participants may not exist yet */ }
+
     for (const [participantId, breakoutRoomId] of Object.entries(assignments)) {
       try {
-        const metadata = JSON.stringify({ breakoutRoomId });
+        const existing = currentRoomParticipants.find(p => p.identity === participantId);
+        const currentMeta = (() => {
+          try { return existing?.metadata ? JSON.parse(existing.metadata) : {}; }
+          catch { return {}; }
+        })();
+        const metadata = JSON.stringify({ ...currentMeta, breakoutRoomId });
         if (grantPermissions && breakoutRoomId && breakoutRoomId !== 'main') {
           await this.roomService.updateParticipant(
             sessionId,
@@ -207,12 +218,21 @@ export class BreakoutService {
     const config = this.normalizeConfig(session.breakoutConfig);
     const participantIds = Object.keys(config.assignments);
 
+    let roomParticipants: any[] = [];
+    try { roomParticipants = await this.roomService.listParticipants(sessionId); }
+    catch { /* ignore */ }
+
     for (const participantId of participantIds) {
       try {
+        const existing = roomParticipants.find(p => p.identity === participantId);
+        const currentMeta = (() => {
+          try { return existing?.metadata ? JSON.parse(existing.metadata) : {}; }
+          catch { return {}; }
+        })();
         await this.roomService.updateParticipant(
           sessionId,
           participantId,
-          JSON.stringify({ breakoutRoomId: null }),
+          JSON.stringify({ ...currentMeta, breakoutRoomId: null }),
           BreakoutService.getMainRoomPermissions(),
         );
         this.logger.log(`Revoked permissions for ${participantId} (back to main)`);

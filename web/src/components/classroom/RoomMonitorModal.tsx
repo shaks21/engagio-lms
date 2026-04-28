@@ -3,7 +3,6 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { X, Headphones } from 'lucide-react';
 import { useParticipants } from '@livekit/components-react';
-import { VideoTrack, AudioTrack } from '@livekit/components-react';
 import { Track } from 'livekit-client';
 
 interface MonitorModalProps {
@@ -19,10 +18,47 @@ function MonitoredParticipantTile({ identity }: { identity: string }) {
   );
   const isMuted = !participant?.isMicrophoneEnabled;
 
-  const videoTrack = participant?.getTrackPublication(Track.Source.Camera)?.track;
-  const audioTrack = participant?.getTrackPublication(Track.Source.Microphone)?.track;
+  const videoPub = participant?.getTrackPublication(Track.Source.Camera);
+  const videoTrack = videoPub?.track;
+  const audioPub = participant?.getTrackPublication(Track.Source.Microphone);
+  const audioTrack = audioPub?.track;
+
+  const videoRef = React.useRef<HTMLVideoElement>(null);
+  const audioRef = React.useRef<HTMLAudioElement>(null);
+
+  React.useEffect(() => {
+    const el = videoRef.current;
+    if (el && videoTrack) {
+      videoTrack.attach(el);
+      return () => { videoTrack?.detach(el); };
+    }
+  }, [videoTrack]);
+
+  React.useEffect(() => {
+    const el = audioRef.current;
+    if (el && audioTrack && !participant?.isLocal) {
+      audioTrack.attach(el);
+      el.muted = false;
+      el.play().catch(() => {});
+      return () => { audioTrack?.detach(el); };
+    }
+  }, [audioTrack, participant?.isLocal]);
 
   if (!participant) return null;
+
+  const name = participant.name || participant.identity;
+  const initials = name
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+
+  const isVideoOn =
+    !!videoPub &&
+    (participant.isLocal ? videoPub.isEnabled : videoPub.isSubscribed) &&
+    !videoPub.isMuted &&
+    !!videoTrack;
 
   return (
     <div
@@ -31,39 +67,23 @@ function MonitoredParticipantTile({ identity }: { identity: string }) {
       }`}
     >
       <div className="aspect-video bg-gray-900 relative">
-        {videoTrack ? (
-          <VideoTrack
-            ref={(el) => {
-              if (el && videoTrack.mediaStream) {
-                el.srcObject = videoTrack.mediaStream;
-                if (el.paused) el.play().catch(() => {});
-              }
-            }}
+        {isVideoOn ? (
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted={participant.isLocal}
             className="w-full h-full object-cover"
           />
         ) : (
           <div className="flex items-center justify-center h-full">
             <div className="w-12 h-12 rounded-full bg-gray-700 flex items-center justify-center text-lg font-bold text-gray-300">
-              {(participant.name || participant.identity)
-                .split(' ')
-                .map((n) => n[0])
-                .join('')
-                .toUpperCase()
-                .slice(0, 2)}
+              {initials}
             </div>
           </div>
         )}
-        {audioTrack && (
-          <div className="sr-only">
-            <AudioTrack
-              ref={(el) => {
-                if (el && audioTrack.mediaStream) {
-                  el.srcObject = audioTrack.mediaStream;
-                  if (el.paused) el.play().catch(() => {});
-                }
-              }}
-            />
-          </div>
+        {!participant.isLocal && (
+          <audio ref={audioRef} autoPlay playsInline muted={participant.isLocal} />
         )}
       </div>
 
