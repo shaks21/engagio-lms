@@ -79,7 +79,7 @@ export class BreakoutController {
       participants = roomInfo.filter((p) => p !== req.user.id);
     }
 
-    const groups = this.breakoutService.autoShuffle(
+    const groups = BreakoutService.autoShuffle(
       participants,
       body.groupCount,
     );

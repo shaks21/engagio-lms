@@ -140,9 +140,12 @@ export class BreakoutService {
 
   /**
    * Auto-shuffle participants into N groups.
+   * Caps groupCount to participant count to avoid empty rooms.
    */
-  autoShuffle(participants: string[], groupCount: number): Record<string, string>[] {
+  static autoShuffle(participants: string[], groupCount: number): Record<string, string>[] {
+    const MAX_ROOMS = 25;
     if (participants.length === 0 || groupCount < 2) return [];
+    groupCount = Math.min(groupCount, participants.length, MAX_ROOMS);
     // Fisher-Yates shuffle
     const shuffled = [...participants];
     for (let i = shuffled.length - 1; i > 0; i--) {
@@ -159,7 +162,7 @@ export class BreakoutService {
       const size = baseSize + (g < remainder ? 1 : 0);
       const group: Record<string, string> = {};
       for (let s = 0; s < size; s++) {
-        group[shuffled[idx]] = `room-${String.fromCharCode(97 + g)}`; // room-a, room-b, ...
+        group[shuffled[idx]] = `room-${String.fromCharCode(97 + g)}`;
         idx++;
       }
       if (Object.keys(group).length > 0) groups.push(group);
