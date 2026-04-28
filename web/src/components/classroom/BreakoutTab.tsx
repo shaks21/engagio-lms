@@ -411,7 +411,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
             </select>
             {students.length > 0 && (
               <span data-testid="room-capacity-hint" className="text-[10px] text-gray-500">
-                {capacityHint} per room
+                {capacityHint}
               </span>
             )}
           </div>

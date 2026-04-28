@@ -86,8 +86,8 @@ test('Teacher creates 3 breakout rooms, auto-shuffles 6 students, then manually 
     await tab.click();
     await tPage.waitForTimeout(500);
 
-    // ── Step A: Number dropdown exists, max 25 ──
-    const roomCountSelect = tPage.getByTestId('breakout-room-count');
+    // ── Step A: Number dropdown exists, scoped to desktop sidebar, max 25 ──
+    const roomCountSelect = tPage.locator('aside [data-testid="breakout-room-count"]').first();
     await expect(roomCountSelect).toBeVisible();
     const options = await roomCountSelect.locator('option').all();
     const values = await Promise.all(options.map((o: any) => o.getAttribute('value')));
@@ -96,19 +96,19 @@ test('Teacher creates 3 breakout rooms, auto-shuffles 6 students, then manually 
     // ── Step B: Select 3 rooms, shows per-room capacity hint ──
     await roomCountSelect.selectOption('3');
     await tPage.waitForTimeout(200);
-    const capacityHint = tPage.getByTestId('room-capacity-hint');
+    const capacityHint = tPage.locator('aside [data-testid="room-capacity-hint"]').first();
     await expect(capacityHint).toBeVisible();
     const hintText = await capacityHint.textContent();
     expect(hintText).toMatch(/2\s*students?\s*per\s*room/i);
 
     // ── Step C: Auto shuffle ──
-    const shuffleBtn = tPage.getByRole('button', { name: /Auto Shuffle/i });
+    const shuffleBtn = tPage.locator('aside').getByRole('button', { name: /Auto Shuffle/i });
     await expect(shuffleBtn).toBeVisible();
     await shuffleBtn.click();
     await tPage.waitForTimeout(2500);
 
     // Verify exactly 3 room cards appear
-    const roomCards = tPage.locator('[data-testid="breakout-room-card"]');
+    const roomCards = tPage.locator('aside [data-testid="breakout-room-card"]');
     let cardCount = await roomCards.count();
     expect(cardCount).toBe(3);
 
@@ -121,13 +121,13 @@ test('Teacher creates 3 breakout rooms, auto-shuffles 6 students, then manually 
     expect(totalAssigned).toBe(6);
 
     // ── Step D: Manual allocation ──
-    const manualBtn = tPage.getByRole('button', { name: /Manual Allocation/i });
+    const manualBtn = tPage.locator('aside').getByRole('button', { name: /Manual Allocation/i });
     await expect(manualBtn).toBeVisible();
     await manualBtn.click();
     await tPage.waitForTimeout(500);
 
     // Unassigned pool should exist
-    const unassignedPool = tPage.getByTestId('unassigned-pool');
+    const unassignedPool = tPage.locator('aside [data-testid="unassigned-pool"]').first();
     await expect(unassignedPool).toBeVisible();
 
     // Move one student from room-1 to unassigned, then to room-2
@@ -146,7 +146,7 @@ test('Teacher creates 3 breakout rooms, auto-shuffles 6 students, then manually 
     }
 
     // ── Step E: Close all rooms ──
-    const closeBtn = tPage.getByRole('button', { name: /Close All Rooms/i });
+    const closeBtn = tPage.locator('aside').getByRole('button', { name: /Close All Rooms/i });
     await expect(closeBtn).toBeVisible();
     await closeBtn.click();
     await tPage.waitForTimeout(2000);
