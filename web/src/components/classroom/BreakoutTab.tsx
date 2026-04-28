@@ -21,7 +21,7 @@ interface Student {
   breakoutRoomId: string | null;
 }
 
-type AllocationMode = 'auto' | 'manual';
+type AllocationMode = 'AUTO' | 'MANUAL' | 'SELF_SELECT';
 
 const MAX_ROOMS = 25;
 
@@ -245,7 +245,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   const handleShuffle = useCallback(async () => {
     if (!socket || !roomName) return;
     setLoading(true);
-    setAllocationMode('auto');
+    setAllocationMode('AUTO');
     const token = localStorage.getItem('engagio_token');
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/auto`, {
@@ -442,10 +442,10 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                 Auto Shuffle
               </button>
               <button
-                onClick={() => setAllocationMode(allocationMode === 'manual' ? null : 'manual')}
+                onClick={() => setAllocationMode(allocationMode === 'MANUAL' ? null : 'MANUAL')}
                 disabled={loading}
                 className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                  allocationMode === 'manual'
+                  allocationMode === 'MANUAL'
                     ? 'bg-engagio-600/40 border-engagio-500/50 text-engagio-300'
                     : 'bg-gray-700/30 border-gray-600/30 text-gray-400 hover:bg-gray-700/50'
                 } disabled:opacity-50`}
@@ -467,7 +467,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
       </div>
 
       {/* ── Manual Allocation Mode ── */}
-      {allocationMode === 'manual' && isTeacher && (
+      {allocationMode === 'MANUAL' && isTeacher && (
         <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
           {/* Unassigned pool */}
           <div data-testid="unassigned-pool" className="border border-dashed border-gray-600 rounded-lg bg-gray-800/20 p-2">
@@ -558,7 +558,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
       )}
 
       {/* ── Normal View (auto mode or not editing manual) ── */}
-      {(allocationMode !== 'manual') && (
+      {(allocationMode !== 'MANUAL') && (
         <>
           <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
             {Object.keys(groups).length === 0 && (

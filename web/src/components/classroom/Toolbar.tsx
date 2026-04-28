@@ -32,11 +32,12 @@ interface ToolbarProps {
   isLocalPinned?: boolean;
   viewMode?: 'focus' | 'grid' | 'immersive';
   onViewModeChange?: (mode: 'focus' | 'grid' | 'immersive') => void;
+  canPresent?: boolean;
 }
 
 function TooltipButton({
   children, onClick, active = false, activeClass = '', inactiveClass = '',
-  tooltip, badge, flash = false,
+  tooltip, badge, flash = false, disabled = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
@@ -46,16 +47,18 @@ function TooltipButton({
   tooltip: string;
   badge?: React.ReactNode;
   flash?: boolean;
+  disabled?: boolean;
 }) {
   const [showTip, setShowTip] = useState(false);
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       onMouseEnter={() => setShowTip(true)}
       onMouseLeave={() => setShowTip(false)}
       className={`control-btn group relative p-2.5 sm:p-3 rounded-xl transition-all ${
         flash ? 'animate-btn-flash' : ''
-      } ${active ? activeClass : inactiveClass}`}
+      } ${active ? activeClass : `${inactiveClass} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}`}
       aria-label={tooltip}
     >
       {children}
@@ -228,7 +231,7 @@ export default function Toolbar({
   micMuted, cameraOff, handRaised, screenShareActive, unreadChatCount = 0,
   onToggleMic, onToggleCamera, onToggleScreenShare, onToggleHandRaise,
   onToggleChat, onToggleSidebar, onLeave, onToast, onPinLocal,
-  isLocalPinned = false, viewMode, onViewModeChange,
+  isLocalPinned, viewMode, onViewModeChange, canPresent,
 }: ToolbarProps) {
   const micFlashing = !micMuted;
   const camFlashing = !cameraOff;
@@ -266,7 +269,9 @@ export default function Toolbar({
 
         <TooltipButton onClick={onToggleScreenShare} active={screenShareActive} flash={screenShareActive}
           activeClass="bg-green-600 hover:bg-green-700 text-white ring-2 ring-green-400/50"
-          inactiveClass="bg-gray-700 hover:bg-gray-600 text-white" tooltip="Share Screen"
+          inactiveClass={`bg-gray-700 hover:bg-gray-600 text-white ${canPresent === false ? 'opacity-40 cursor-not-allowed' : ''}`}
+          tooltip={canPresent === false ? 'Screen sharing only available in breakout rooms' : 'Share Screen'}
+          disabled={canPresent === false}
         >
           <MonitorUp className="w-5 h-5" />
         </TooltipButton>

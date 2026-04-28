@@ -17,6 +17,7 @@ import type { Message as ChatMessageType } from './Chat';
 import PreJoin from './PreJoin';
 import type { PollData } from './Poll';
 import PollToast from './PollToast';
+import BroadcastOverlay from './BroadcastOverlay';
 
 /* ───────────────── types ───────────────── */
 
@@ -616,6 +617,19 @@ function InnerRoomUI({
 
   return (
       <>
+      {/* Global Broadcast Overlay (teacher composer + student toasts) */}
+      <BroadcastOverlay
+        socket={socket}
+        isTeacher={isTeacher}
+        onSendBroadcast={isTeacher ? (content: string) => {
+          if (!socket || !sessionId) return;
+          socket.emit('broadcast-chat', { sessionId, content }, (res: any) => {
+            if (res?.status === 'ok') {
+              addToast({ id: Date.now().toString(), message: 'Broadcast sent', type: 'success' });
+            }
+          });
+        } : undefined}
+      />
       {/* Floating Header — sticky to avoid overlapping sidebar */}
       <div className="sticky top-0 z-50">
         <GlassHeader
@@ -718,6 +732,7 @@ function InnerRoomUI({
           isLocalPinned={pinnedSid === room.localParticipant.sid}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
+          canPresent={isTeacher || (() => { try { return !!JSON.parse(room.localParticipant.metadata || '{}').breakoutRoomId; } catch { return false; } })()}
         />
       </div>
 

@@ -783,6 +783,76 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     return { status: "ok", isBroadcasting };
   }
 
+  @SubscribeMessage("broadcast-chat")
+  async handleBroadcastChat(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; content: string },
+  ) {
+    const { sessionId, content } = data;
+    const senderUserId = client.data.userId as string | undefined;
+
+    // Verify sender is instructor
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) return { status: "error", message: "Session not found" };
+    if (session.course?.instructorId !== senderUserId) {
+      return { status: "error", message: "Forbidden" };
+    }
+
+    // Emit to ALL participants in the session (across all breakout rooms)
+    this.server.to(`session::${sessionId}`).emit("global-broadcast-chat", {
+      content,
+      senderId: senderUserId,
+      timestamp: new Date().toISOString(),
+    });
+
+    // Persist for session map analytics
+    await this.ingest.emitEvent({
+      tenantId: session.tenantId,
+      sessionId,
+      type: "TEACHER_INTERVENTION",
+      payload: { action: "BROADCAST_CHAT", content, senderUserId },
+      userId: senderUserId || "unknown",
+    });
+
+    return { status: "ok" };
+  }
+
+  @SubscribeMessage("breakout-config-mode")
+  async handleBreakoutConfigMode(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; assignmentMode: 'AUTO' | 'MANUAL' | 'SELF_SELECT'; groupCount?: number },
+  ) {
+    const { sessionId, assignmentMode, groupCount } = data;
+    const senderUserId = client.data.userId as string | undefined;
+
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) return { status: "error", message: "Session not found" };
+    if (session.course?.instructorId !== senderUserId) {
+      return { status: "error", message: "Forbidden" };
+    }
+
+    const raw = (session.breakoutConfig ?? {}) as any;
+    const config = raw.assignments ? raw : { assignments: raw };
+    const updated = { ...config, assignmentMode, groupCount };
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { breakoutConfig: updated as any },
+    });
+
+    this.server.to(`session::${sessionId}`).emit("breakout-mode-changed", {
+      assignmentMode,
+      groupCount,
+    });
+
+    return { status: "ok", assignmentMode };
+  }
+
   // ── In-memory room monitoring state (sessionId -> { target: string, peekMode: boolean }) ──
   private monitorState = new Map<string, { target: string; peekMode: boolean; notify: boolean }>();
 

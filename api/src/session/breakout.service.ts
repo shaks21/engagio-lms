@@ -7,6 +7,12 @@ export interface BreakoutAssignments {
   assignments: Record<string, string>;
 }
 
+interface BreakoutConfig {
+  assignments: Record<string, string>;
+  groupCount?: number;
+  assignmentMode?: 'AUTO' | 'MANUAL' | 'SELF_SELECT';
+}
+
 @Injectable()
 export class BreakoutService {
   private readonly logger = new Logger(BreakoutService.name);
@@ -18,21 +24,53 @@ export class BreakoutService {
   ) {
     const apiKey    = this.configService.get<string>('LIVEKIT_API_KEY', 'devkey');
     const apiSecret = this.configService.get<string>('LIVEKIT_API_SECRET', '');
-    // Use internal LiveKit API endpoint (localhost:7880) for RoomServiceClient.
-    // LIVEKIT_URL is public WS endpoint for clients; API needs direct HTTP.
     const livekitApiUrl = this.configService.get<string>('LIVEKIT_API_URL', 'http://localhost:7880');
     this.roomService = new RoomServiceClient(livekitApiUrl, apiKey, apiSecret);
   }
 
   /**
-   * Assign participants to breakout rooms via LiveKit metadata.
-   * @returns updated assignments map
+   * Normalize breakoutConfig from Prisma: backward-compat for plain map.
+   */
+  private normalizeConfig(raw: any): BreakoutConfig {
+    if (!raw) return { assignments: {} };
+    if (typeof raw === 'object' && !Array.isArray(raw) && 'assignments' in raw) {
+      return raw as BreakoutConfig;
+    }
+    // Legacy: plain Record<string, string>
+    return { assignments: raw as Record<string, string> };
+  }
+
+  /**
+   * Grant elevated privileges to a participant moved into a breakout room.
+   */
+  static getBreakoutPermissions() {
+    return {
+      canPublish: true,
+      canPublishData: true,
+      canSubscribe: true,
+    };
+  }
+
+  /**
+   * Revoke publishing privileges when returning to main room (lecture mode).
+   */
+  static getMainRoomPermissions() {
+    return {
+      canPublish: false,
+      canPublishData: false,
+      canSubscribe: true,
+    };
+  }
+
+  /**
+   * Assign participants to breakout rooms via LiveKit metadata + permissions.
    */
   async assignBreakouts(
     tenantId: string,
     sessionId: string,
     userId: string,
     assignments: Record<string, string>,
+    grantPermissions?: boolean,
   ): Promise<Record<string, string>> {
     const session = await this.prisma.session.findFirst({
       where: { id: sessionId, tenantId },
@@ -43,33 +81,93 @@ export class BreakoutService {
       throw new ForbiddenException('Only the course instructor can manage breakout rooms');
     }
 
-    // Update each participant's metadata in LiveKit
+    // Update each participant's metadata + permissions in LiveKit
     for (const [participantId, breakoutRoomId] of Object.entries(assignments)) {
       try {
-        await this.roomService.updateParticipant(
-          sessionId,
-          participantId,
-          JSON.stringify({ breakoutRoomId }),
-        );
-        this.logger.log(`Assigned ${participantId} → ${breakoutRoomId}`);
+        const metadata = JSON.stringify({ breakoutRoomId });
+        if (grantPermissions && breakoutRoomId && breakoutRoomId !== 'main') {
+          await this.roomService.updateParticipant(
+            sessionId,
+            participantId,
+            metadata,
+            BreakoutService.getBreakoutPermissions(),
+          );
+          this.logger.log(`Assigned ${participantId}\u0020\u2192 ${breakoutRoomId} (+elevated permissions)`);
+        } else {
+          await this.roomService.updateParticipant(sessionId, participantId, metadata);
+          this.logger.log(`Assigned ${participantId}\u0020\u2192 ${breakoutRoomId}`);
+        }
       } catch (e: any) {
         this.logger.warn(`Failed to update ${participantId}: ${e.message}`);
-        // Continue — participant may not have joined LiveKit yet
       }
     }
 
-    // Persist in Prisma as source-of-truth fallback — MERGE with existing config
+    // Persist in Prisma
     const current = await this.prisma.session.findFirst({
       where: { id: sessionId },
       select: { breakoutConfig: true },
     });
-    const existing = (current?.breakoutConfig ?? {}) as Record<string, string>;
+    const config = this.normalizeConfig(current?.breakoutConfig);
+    config.assignments = { ...config.assignments, ...assignments };
     await this.prisma.session.update({
       where: { id: sessionId },
-      data: { breakoutConfig: { ...existing, ...assignments } as any },
+      data: { breakoutConfig: config as any },
     });
 
+    // Emit Kafka-style analytics event (log, in production this would use @nestjs/microservices)
+    this.logger.log(`[Analytics] room-switch session=${sessionId} count=${Object.keys(assignments).length}`);
+
     return assignments;
+  }
+
+  /**
+   * Self-select: any participant can assign themselves to a room (teacher must enable mode).
+   */
+  async selfSelect(
+    tenantId: string,
+    sessionId: string,
+    userId: string,
+    breakoutRoomId: string | null,
+  ): Promise<Record<string, string>> {
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId, tenantId },
+    });
+    if (!session) throw new NotFoundException('Session not found');
+
+    const config = this.normalizeConfig(session.breakoutConfig);
+    if (config.assignmentMode !== 'SELF_SELECT') {
+      throw new ForbiddenException('Self-selection is not enabled');
+    }
+
+    try {
+      const metadata = JSON.stringify({ breakoutRoomId });
+      if (breakoutRoomId && breakoutRoomId !== 'main') {
+        await this.roomService.updateParticipant(
+          sessionId,
+          userId,
+          metadata,
+          BreakoutService.getBreakoutPermissions(),
+        );
+      } else {
+        await this.roomService.updateParticipant(
+          sessionId,
+          userId,
+          metadata,
+          BreakoutService.getMainRoomPermissions(),
+        );
+      }
+      this.logger.log(`[SelfSelect] ${userId}\u0020\u2192 ${breakoutRoomId || 'main'}`);
+    } catch (e: any) {
+      this.logger.warn(`Self-select failed for ${userId}: ${e.message}`);
+    }
+
+    config.assignments = { ...config.assignments, [userId]: breakoutRoomId || 'main' };
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { breakoutConfig: config as any },
+    });
+
+    return config.assignments;
   }
 
   /**
@@ -79,19 +177,18 @@ export class BreakoutService {
     tenantId: string,
     sessionId: string,
     userId: string,
-  ): Promise<Record<string, string>> {
+  ): Promise<BreakoutConfig> {
     const session = await this.prisma.session.findFirst({
       where: { id: sessionId, tenantId },
       include: { course: true },
     });
     if (!session) throw new NotFoundException('Session not found');
 
-    const config = (session.breakoutConfig ?? {}) as Record<string, string>;
-    return config;
+    return this.normalizeConfig(session.breakoutConfig);
   }
 
   /**
-   * Clear all breakout assignments (Close All Rooms).
+   * Clear all breakout assignments (Close All Rooms) + revoke privileges.
    */
   async clearBreakouts(
     tenantId: string,
@@ -107,20 +204,24 @@ export class BreakoutService {
       throw new ForbiddenException('Only the course instructor can manage breakout rooms');
     }
 
-    const config = (session.breakoutConfig ?? {}) as Record<string, string>;
-    for (const participantId of Object.keys(config)) {
+    const config = this.normalizeConfig(session.breakoutConfig);
+    const participantIds = Object.keys(config.assignments);
+
+    for (const participantId of participantIds) {
       try {
         await this.roomService.updateParticipant(
           sessionId,
           participantId,
           JSON.stringify({ breakoutRoomId: null }),
+          BreakoutService.getMainRoomPermissions(),
         );
+        this.logger.log(`Revoked permissions for ${participantId} (back to main)`);
       } catch { /* participant may be gone */ }
     }
 
     await this.prisma.session.update({
       where: { id: sessionId },
-      data: { breakoutConfig: {} },
+      data: { breakoutConfig: { assignments: {} } as any },
     });
     this.logger.log(`Cleared all breakouts for session ${sessionId}`);
   }
@@ -139,34 +240,42 @@ export class BreakoutService {
   }
 
   /**
-   * Auto-shuffle participants into N groups.
-   * Caps groupCount to participant count to avoid empty rooms.
+   * Round-robin assign participants across N rooms for even distribution.
    */
-  static autoShuffle(participants: string[], groupCount: number): Record<string, string>[] {
+  static roundRobin(participants: string[], groupCount: number): Record<string, string> {
     const MAX_ROOMS = 25;
-    if (participants.length === 0 || groupCount < 2) return [];
+    if (participants.length === 0 || groupCount < 2) return {};
     groupCount = Math.min(groupCount, participants.length, MAX_ROOMS);
-    // Fisher-Yates shuffle
+
+    // Fisher-Yates shuffle for randomness
     const shuffled = [...participants];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
 
-    const groups: Record<string, string>[] = [];
-    const baseSize = Math.floor(shuffled.length / groupCount);
-    const remainder = shuffled.length % groupCount;
+    const assignments: Record<string, string> = {};
+    shuffled.forEach((pid, idx) => {
+      const roomIdx = idx % groupCount;
+      assignments[pid] = `room-${String.fromCharCode(97 + roomIdx)}`;
+    });
 
-    let idx = 0;
-    for (let g = 0; g < groupCount; g++) {
-      const size = baseSize + (g < remainder ? 1 : 0);
-      const group: Record<string, string> = {};
-      for (let s = 0; s < size; s++) {
-        group[shuffled[idx]] = `room-${String.fromCharCode(97 + g)}`;
-        idx++;
-      }
-      if (Object.keys(group).length > 0) groups.push(group);
+    return assignments;
+  }
+
+  /**
+   * Legacy auto-shuffle returning grouped objects (kept for compat).
+   */
+  static autoShuffle(participants: string[], groupCount: number): Record<string, string>[] {
+    const assignments = BreakoutService.roundRobin(participants, groupCount);
+    if (Object.keys(assignments).length === 0) return [];
+
+    // Group back into per-room objects for controller compat
+    const groups = new Map<string, Record<string, string>>();
+    for (const [pid, room] of Object.entries(assignments)) {
+      if (!groups.has(room)) groups.set(room, {});
+      groups.get(room)![pid] = room;
     }
-    return groups;
+    return Array.from(groups.values());
   }
 }
