@@ -13,26 +13,12 @@ import {
 import { BreakoutService } from './breakout.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TenantGuard } from '../tenancy/tenant.guard';
-
-interface BreakoutPatchBody {
-  assignments: Record<string, string>;
-  grantPermissions?: boolean;
-}
-
-interface BreakoutAutoBody {
-  groupCount: number;
-  algorithm?: 'SHUFFLE' | 'ROUND_ROBIN';
-  participants?: string[];
-}
-
-interface BreakoutSelfSelectBody {
-  breakoutRoomId: string | null;
-}
-
-interface BreakoutModeBody {
-  assignmentMode: 'AUTO' | 'MANUAL' | 'SELF_SELECT';
-  groupCount?: number;
-}
+import {
+  BreakoutPatchBody,
+  BreakoutAutoBody,
+  BreakoutSelfSelectBody,
+  BreakoutModeBody,
+} from './dto/breakout.dto';
 
 @UseGuards(JwtAuthGuard, TenantGuard)
 @Controller('sessions/:sessionId/breakouts')
@@ -117,7 +103,7 @@ export class BreakoutController {
       req.tenantId,
       sessionId,
       req.user.id,
-      body.breakoutRoomId,
+      body.breakoutRoomId ?? null,
     );
     return { success: true, assignments };
   }
