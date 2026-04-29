@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { LogOut, Shuffle, Users, Layers, Radio, RadioOff, Eye, Loader, Move, Plus, Minus, X } from 'lucide-react';
+import { LogOut, Shuffle, Users, Layers, Radio, RadioOff, Eye, Loader, Move, Plus, Minus, X, Check, ArrowRightLeft } from 'lucide-react';
 import { useParticipants, useLocalParticipant } from '@livekit/components-react';
 import { useAuth } from '@/lib/auth-context';
 import { useEngagement } from '@/hooks/useEngagement';
@@ -149,6 +149,8 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   /* ── state ── */
   const [roomCount, setRoomCount] = useState(2);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const [previewAssignments, setPreviewAssignments] = useState<Record<string, string> | null>(null);
+  const [showingPreview, setShowingPreview] = useState(false);
   const [loading, setLoading] = useState(false);
   const [allocationMode, setAllocationMode] = useState<AllocationMode | null>(null);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
@@ -157,10 +159,19 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   const [peekMode, setPeekMode] = useState(true);
   const [showMonitorModal, setShowMonitorModal] = useState(false);
 
+  /* current user's room for the main container badge */
+  const myRoomId = useMemo(() => {
+    try { return JSON.parse(localParticipant?.metadata || '{}').breakoutRoomId || 'main'; }
+    catch { return 'main'; }
+  }, [localParticipant?.metadata]);
+
   /* derived computed assignments merged from backend + local overrides */
   const mergedAssignments = useMemo(() => {
+    if (showingPreview && previewAssignments) {
+      return { ...previewAssignments };
+    }
     return { ...assignments };
-  }, [assignments]);
+  }, [assignments, showingPreview, previewAssignments]);
 
   /* grouped assignable participants by room */
   const groups = useMemo(() => {
@@ -257,10 +268,34 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
 
   /* ── handlers ── */
 
-  const handleShuffle = useCallback(async () => {
-    if (!socket || !roomName) return;
-    setLoading(true);
+  const generatePreview = useCallback(() => {
+    // Local preview: Fisher-Yates shuffle + round-robin across roomCount
+    const pids = assignableParticipants.filter((p) => !p.isTeacher).map((p) => p.identity);
+    if (pids.length === 0) return {};
+    const shuffled = [...pids];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    const preview: Record<string, string> = {};
+    shuffled.forEach((pid, idx) => {
+      const roomIdx = idx % roomCount;
+      preview[pid] = `room-${String.fromCharCode(97 + roomIdx)}`;
+    });
+    return preview;
+  }, [assignableParticipants, roomCount]);
+
+  const handleShuffle = useCallback(() => {
+    // Enter preview mode
+    const preview = generatePreview();
+    setPreviewAssignments(preview);
+    setShowingPreview(true);
     setAllocationMode('AUTO');
+  }, [generatePreview]);
+
+  const confirmShuffle = useCallback(async () => {
+    if (!socket || !roomName || !previewAssignments) return;
+    setLoading(true);
     const token = localStorage.getItem('engagio_token');
     try {
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/auto`, {
@@ -271,13 +306,22 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
       if (!res.ok) throw new Error(`Shuffle failed: ${res.status}`);
       const data = await res.json();
       if (data.assignments) setAssignments(data.assignments);
+      setPreviewAssignments(null);
+      setShowingPreview(false);
+      setAllocationMode(null);
     } catch (e) {
       console.error('[BreakoutTab] Shuffle error:', e);
       alert('Failed to shuffle rooms. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [socket, roomName, roomCount]);
+  }, [socket, roomName, roomCount, previewAssignments]);
+
+  const cancelShuffle = useCallback(() => {
+    setPreviewAssignments(null);
+    setShowingPreview(false);
+    setAllocationMode(null);
+  }, []);
 
   const handleCloseAllRooms = useCallback(async () => {
     if (!socket || !roomName) return;
@@ -306,6 +350,40 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
       if (res?.status === 'ok') setIsBroadcasting(res.isBroadcasting);
     });
   }, [socket, roomName, isBroadcasting]);
+  /* Normal view: unassign a participant to main */
+  const unallocateParticipant = useCallback(async (identity: string) => {
+    setAssignments((prev) => {
+      const next = { ...prev };
+      delete next[identity];
+      return next;
+    });
+    // Immediately persist
+    if (!roomName) return;
+    const token = localStorage.getItem('engagio_token');
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+        body: JSON.stringify({ assignments: { ...assignments, [identity]: null } }),
+      });
+    } catch (e) { console.warn('Unallocate failed:', e); }
+  }, [roomName, assignments]);
+
+  /* Normal view: move a participant to a different room */
+  const changeParticipantRoom = useCallback(async (identity: string, newRoomId: string) => {
+    setAssignments((prev) => ({ ...prev, [identity]: newRoomId }));
+    // Immediately persist
+    if (!roomName) return;
+    const token = localStorage.getItem('engagio_token');
+    try {
+      await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+        body: JSON.stringify({ assignments: { ...assignments, [identity]: newRoomId } }),
+      });
+    } catch (e) { console.warn('Change room failed:', e); }
+  }, [roomName, assignments]);
+
 
   /* manual allocation helpers */
   const moveStudent = useCallback((identity: string, toRoomId: string | null) => {
@@ -454,34 +532,60 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
             </div>
 
             <div className="flex items-center gap-2">
-              <button
-                onClick={handleShuffle}
-                disabled={loading || totalParticipants === 0}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/20 hover:bg-engagio-600/30 disabled:opacity-50 border border-engagio-500/30 text-engagio-400 text-xs font-medium transition-colors"
-              >
-                {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Shuffle className="w-4 h-4" />}
-                Auto Shuffle
-              </button>
-              <button
-                onClick={() => setAllocationMode(allocationMode === 'MANUAL' ? null : 'MANUAL')}
-                disabled={loading}
-                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                  allocationMode === 'MANUAL'
-                    ? 'bg-engagio-600/40 border-engagio-500/50 text-engagio-300'
-                    : 'bg-gray-700/30 border-gray-600/30 text-gray-400 hover:bg-gray-700/50'
-                } disabled:opacity-50`}
-              >
-                <Users className="w-4 h-4" />
-                Manual Allocation
-              </button>
-              <button
-                onClick={handleCloseAllRooms}
-                disabled={loading || Object.keys(assignments).length === 0}
-                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 border border-red-500/30 text-red-400 text-xs font-medium transition-colors"
-              >
-                {loading ? <Loader className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
-                Close All Rooms
-              </button>
+              {showingPreview ? (
+                <>
+                  <button
+                    onClick={confirmShuffle}
+                    disabled={loading}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/30 hover:bg-engagio-600/50 disabled:opacity-50 border border-engagio-500/30 text-engagio-300 text-xs font-medium transition-colors"
+                    data-testid="confirm-shuffle"
+                  >
+                    {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                    Confirm
+                  </button>
+                  <button
+                    onClick={cancelShuffle}
+                    disabled={loading}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 border border-gray-600/30 text-gray-400 text-xs font-medium transition-colors"
+                    data-testid="cancel-shuffle"
+                  >
+                    <X className="w-4 h-4" />
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={handleShuffle}
+                    disabled={loading || totalParticipants === 0}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/20 hover:bg-engagio-600/30 disabled:opacity-50 border border-engagio-500/30 text-engagio-400 text-xs font-medium transition-colors"
+                    data-testid="auto-shuffle-btn"
+                  >
+                    {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Shuffle className="w-4 h-4" />}
+                    Auto Shuffle
+                  </button>
+                  <button
+                    onClick={() => setAllocationMode(allocationMode === 'MANUAL' ? null : 'MANUAL')}
+                    disabled={loading}
+                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                      allocationMode === 'MANUAL'
+                        ? 'bg-engagio-600/40 border-engagio-500/50 text-engagio-300'
+                        : 'bg-gray-700/30 border-gray-600/30 text-gray-400 hover:bg-gray-700/50'
+                    } disabled:opacity-50`}
+                  >
+                    <Users className="w-4 h-4" />
+                    Manual Allocation
+                  </button>
+                  <button
+                    onClick={handleCloseAllRooms}
+                    disabled={loading || Object.keys(assignments).length === 0}
+                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 border border-red-500/30 text-red-400 text-xs font-medium transition-colors"
+                  >
+                    {loading ? <Loader className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+                    Close All Rooms
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
@@ -578,6 +682,15 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
         </div>
       )}
 
+      {/* ── Auto Shuffle Preview banner ── */}
+      {showingPreview && allocationMode === 'AUTO' && (
+        <div className="px-3 py-1.5 bg-engagio-600/10 border-b border-engagio-500/20">
+          <p className="text-[10px] text-engagio-300">
+            ⚠️ Preview mode — review allocations below, then click Confirm or Cancel
+          </p>
+        </div>
+      )}
+
       {/* ── Normal View (auto mode or not editing manual) ── */}
       {(allocationMode !== 'MANUAL') && (
         <>
@@ -649,7 +762,34 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                   </div>
                   <div className="p-2 space-y-1.5">
                     {members.map((m) => (
-                      <StudentAvatar key={m.identity} participant={m} scores={engagementScores} />
+                      <div key={m.identity} className="flex items-center justify-between">
+                        <div className="flex-1 min-w-0">
+                          <StudentAvatar participant={m} scores={engagementScores} />
+                        </div>
+                        {isTeacher && (
+                          <div className="flex items-center gap-1 ml-1">
+                            <select
+                              data-testid={`change-room-${m.identity}`}
+                              value={mergedAssignments[m.identity] || m.breakoutRoomId || 'main'}
+                              onChange={(e) => changeParticipantRoom(m.identity, e.target.value)}
+                              className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-[9px] text-white focus:outline-none"
+                              title="Change room"
+                            >
+                              <option value="main">Unassigned</option>
+                              {Array.from({ length: roomCount }, (_, i) => `room-${String.fromCharCode(97 + i)}`).map((r) => (
+                                <option key={r} value={r}>{r}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => unallocateParticipant(m.identity)}
+                              className="text-gray-500 hover:text-red-400 transition-colors p-0.5"
+                              title="Move to unassigned"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     ))}
                   </div>
                 </div>

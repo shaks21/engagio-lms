@@ -870,8 +870,8 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
       include: { course: { select: { instructorId: true } } },
     });
     if (!session) return { status: "error", message: "Session not found" };
-    const isTeacher = session.course?.instructorId === senderUserId;
-    if (!isTeacher) return { status: "error", message: "Forbidden: only the instructor can monitor rooms" };
+    const isHost = session.course?.instructorId === senderUserId || session.userId === senderUserId;
+    if (!isHost) return { status: "error", message: "Forbidden: only the session host or instructor can monitor rooms" };
 
     this.monitorState.set(sessionId, { target: roomId, peekMode, notify });
 

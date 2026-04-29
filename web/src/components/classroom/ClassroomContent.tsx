@@ -302,6 +302,7 @@ function InnerRoomUI({
   }, [room.localParticipant.metadata]);
 
   const shardLabel = localBreakoutId ? localBreakoutId : undefined;
+  const roomLabel = localBreakoutId ? localBreakoutId : 'Main Room';
 
   // Expose room for E2E tests
   useEffect(() => {
@@ -649,6 +650,7 @@ function InnerRoomUI({
           onViewModeChange={setViewMode}
           onLeave={handleLeave}
           participantCount={room.numParticipants}
+          roomLabel={roomLabel}
         />
       </div>
       {/* Student Global Announcement banner when broadcast is active */}

@@ -78,7 +78,7 @@ export class BreakoutService {
     });
     if (!session) throw new NotFoundException('Session not found');
     const isHost = session.userId === userId; // actual session host
-    const isInstructor = session.course.instructorId === userId;
+    const isInstructor = session.course?.instructorId === userId;
     if (!isHost && !isInstructor) {
       throw new ForbiddenException('Only the session host or course instructor can manage breakout rooms');
     }
@@ -207,6 +207,7 @@ export class BreakoutService {
     tenantId: string,
     sessionId: string,
     userId: string,
+    participantIds?: string[],
   ): Promise<void> {
     const session = await this.prisma.session.findFirst({
       where: { id: sessionId, tenantId },
@@ -214,19 +215,21 @@ export class BreakoutService {
     });
     if (!session) throw new NotFoundException('Session not found');
     const isHost = session.userId === userId; // actual session host
-    const isInstructor = session.course.instructorId === userId;
+    const isInstructor = session.course?.instructorId === userId;
     if (!isHost && !isInstructor) {
       throw new ForbiddenException('Only the session host or course instructor can manage breakout rooms');
     }
 
     const config = this.normalizeConfig(session.breakoutConfig);
-    const participantIds = Object.keys(config.assignments);
+    const idsToClear = participantIds && participantIds.length > 0
+      ? participantIds
+      : Object.keys(config.assignments);
 
     let roomParticipants: any[] = [];
     try { roomParticipants = await this.roomService.listParticipants(sessionId); }
     catch { /* ignore */ }
 
-    for (const participantId of participantIds) {
+    for (const participantId of idsToClear) {
       try {
         const existing = roomParticipants.find(p => p.identity === participantId);
         const currentMeta = (() => {
@@ -325,7 +328,7 @@ export class BreakoutService {
     });
     if (!session) throw new NotFoundException('Session not found');
     const isHost = session.userId === userId;
-    const isInstructor = session.course.instructorId === userId;
+    const isInstructor = session.course?.instructorId === userId;
     if (!isHost && !isInstructor) {
       throw new ForbiddenException('Only the session host or course instructor can set mode');
     }

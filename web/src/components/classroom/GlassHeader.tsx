@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { GraduationCap, Users, Clock, Circle, Monitor, Video } from 'lucide-react';
+import { GraduationCap, Users, Clock, Circle, Monitor, Video, LayoutGrid } from 'lucide-react';
 import Timer from './Timer';
 
 export type ViewMode = 'focus' | 'grid' | 'immersive';
@@ -18,6 +18,8 @@ interface GlassHeaderProps {
   showRecording?: boolean;
   /** Whether the session is currently being recorded */
   isRecording?: boolean;
+  /** Current breakout room label, e.g. "Main Room" or "room-a". Defaults to undefined (shows nothing). */
+  roomLabel?: string;
 }
 
 export default function GlassHeader({
@@ -30,6 +32,7 @@ export default function GlassHeader({
   onLeave,
   showRecording = false,
   isRecording = false,
+  roomLabel,
 }: GlassHeaderProps) {
   return (
     <header className="fixed top-0 left-0 right-0 h-14 glass-panel z-50 flex items-center justify-between px-4 lg:px-6">
@@ -63,6 +66,12 @@ export default function GlassHeader({
             <Circle className={`w-2 h-2 fill-current ${connected ? 'animate-pulse' : ''}`} />
             <span className="hidden sm:inline">{connected ? 'Live' : 'Connecting'}</span>
           </span>
+          {roomLabel && (
+            <span className="flex items-center gap-1 text-engagio-400">
+              <LayoutGrid className="w-3 h-3" />
+              <span className="hidden sm:inline">{roomLabel}</span>
+            </span>
+          )}
         </div>
       </div>
 
