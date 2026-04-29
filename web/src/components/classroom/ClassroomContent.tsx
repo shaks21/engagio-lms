@@ -123,6 +123,8 @@ function useBreakoutSubscription(
 ) {
   const [assignments, setAssignments] = useState<Record<string, string>>({});
   const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [isMonitoring, setIsMonitoring] = useState(false);
+  const [monitorTarget, setMonitorTarget] = useState<string | null>(null);
 
   // Listen for broadcast state changes from backend
   useEffect(() => {
@@ -138,9 +140,13 @@ function useBreakoutSubscription(
   useEffect(() => {
     if (!socket) return;
     const onTeacherMonitor = (payload: any) => {
+      const monitoring = payload.action === 'START_MONITOR';
+      const target = payload.roomId || null;
+      setIsMonitoring(monitoring);
+      setMonitorTarget(target);
       const state = {
-        isMonitoring: payload.action === "START_MONITOR",
-        monitorTarget: payload.roomId || null,
+        isMonitoring: monitoring,
+        monitorTarget: target,
         peekMode: payload.peekMode !== false,
         notify: payload.notify !== false,
         action: payload.action,
@@ -152,8 +158,8 @@ function useBreakoutSubscription(
         peekMode: state.peekMode,
       };
     };
-    socket.on("teacher-monitor-state", onTeacherMonitor);
-    return () => { socket.off("teacher-monitor-state", onTeacherMonitor); };
+    socket.on('teacher-monitor-state', onTeacherMonitor);
+    return () => { socket.off('teacher-monitor-state', onTeacherMonitor); };
   }, [socket]);
 
   // Fetch breakout assignments from API
@@ -196,14 +202,23 @@ function useBreakoutSubscription(
         } catch {}
 
         if (isTeacher) {
-          // Teacher: subscribe to ALL participants so Control-View monitoring works,
-          // but FocusLayout will only DISPLAY the current room's participants.
-          participant.trackPublications.forEach((pub) => {
-            if (pub.kind === Track.Kind.Video && pub.setVideoQuality) {
-              pub.setVideoQuality(0);
-            }
-            if (pub.setSubscribed) pub.setSubscribed(true);
-          });
+          // Teacher: subscribe to ALL participants by default (for monitoring + Control-View),
+          // but when actively monitoring a specific breakout room, restrict to that room only
+          // so the teacher doesn't hear audio from other rooms.
+          const isMonitoringMode = isMonitoring && monitorTarget && monitorTarget !== 'main';
+          if (isMonitoringMode) {
+            const teacherInTarget = participantBreakoutId === monitorTarget;
+            participant.trackPublications.forEach((pub) => {
+              if (pub.setSubscribed) pub.setSubscribed(teacherInTarget);
+            });
+          } else {
+            participant.trackPublications.forEach((pub) => {
+              if (pub.kind === Track.Kind.Video && pub.setVideoQuality) {
+                pub.setVideoQuality(0);
+              }
+              if (pub.setSubscribed) pub.setSubscribed(true);
+            });
+          }
           return;
         }
 
@@ -271,7 +286,7 @@ function useBreakoutSubscription(
       room.off('trackUnpublished', apply);
       clearInterval(interval);
     };
-  }, [room, isTeacher, userId, assignments, isBroadcasting]);
+  }, [room, isTeacher, userId, assignments, isBroadcasting, isMonitoring, monitorTarget]);
 
   return { assignments, isBroadcasting };
 }

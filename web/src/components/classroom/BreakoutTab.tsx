@@ -301,33 +301,30 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     setAllocationMode('AUTO');
   }, [generatePreview]);
 
-  const confirmShuffle = useCallback(async () => {
+  const acceptPreviewAssignments = useCallback(async () => {
     if (!socket || !roomName || !previewAssignments) return;
     setLoading(true);
     const token = localStorage.getItem('engagio_token');
     try {
-      // Only shuffle students; host/teacher stays in Main Room
-      const studentIds = assignableParticipants
-        .filter((p) => !p.isTeacher)
-        .map((p) => p.identity);
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/auto`, {
-        method: 'POST',
+      // Save the PREVIEWED assignments (not a new random shuffle).
+      // We send them via PATCH so the server stores exactly what was previewed.
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ groupCount: roomCount, participants: studentIds }),
+        body: JSON.stringify({ assignments: previewAssignments }),
       });
-      if (!res.ok) throw new Error(`Shuffle failed: ${res.status}`);
-      const data = await res.json();
-      if (data.assignments) setAssignments(data.assignments);
+      if (!res.ok) throw new Error(`Save preview failed: ${res.status}`);
+      setAssignments(previewAssignments);
       setPreviewAssignments(null);
       setShowingPreview(false);
       setAllocationMode(null);
     } catch (e) {
-      console.error('[BreakoutTab] Shuffle error:', e);
-      alert('Failed to shuffle rooms. Please try again.');
+      console.error('[BreakoutTab] Save preview error:', e);
+      alert('Failed to save auto shuffle. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [socket, roomName, roomCount, previewAssignments]);
+  }, [socket, roomName, previewAssignments]);
 
   const cancelShuffle = useCallback(() => {
     setPreviewAssignments(null);
@@ -444,10 +441,13 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   /* unassigned participants for manual mode */
   const unassignedParticipants = useMemo(() => {
     return assignableParticipants.filter((s) => {
-      const assignedRoom = mergedAssignments[s.identity] || s.breakoutRoomId;
+      // In manual editing, trust ONLY local state; LiveKit metadata is stale
+      const assignedRoom = allocationMode === 'MANUAL'
+        ? mergedAssignments[s.identity]
+        : (mergedAssignments[s.identity] || s.breakoutRoomId);
       return !assignedRoom || assignedRoom === 'main';
     });
-  }, [assignableParticipants, mergedAssignments]);
+  }, [assignableParticipants, mergedAssignments, allocationMode]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -546,7 +546,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
               {showingPreview ? (
                 <>
                   <button
-                    onClick={confirmShuffle}
+                    onClick={acceptPreviewAssignments}
                     disabled={loading}
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/30 hover:bg-engagio-600/50 disabled:opacity-50 border border-engagio-500/30 text-engagio-300 text-xs font-medium transition-colors"
                     data-testid="confirm-shuffle"

@@ -129,15 +129,22 @@ export default function Chat({
   }, [isBroadcastChat, availableRooms]);
 
   // Filter messages
+  // Teachers see all rooms; students see only Main Room + their allocated room + broadcasts
   const filteredMessages = useMemo(() => {
     if (isBroadcastChat) {
       // Show only global broadcasts
       return messages.filter((m) => m.breakoutRoomId === 'broadcast');
     }
-    // Show messages for the active room + broadcasts
-    const targetRoom = activeRoom || breakoutRoomId || 'main';
-    return messages.filter((m) => m.breakoutRoomId === targetRoom || m.breakoutRoomId === 'broadcast');
-  }, [messages, breakoutRoomId, activeRoom, isBroadcastChat]);
+    if (isTeacher) {
+      const targetRoom = activeRoom || breakoutRoomId || 'main';
+      return messages.filter((m) => m.breakoutRoomId === targetRoom || m.breakoutRoomId === 'broadcast');
+    }
+    // Student: always show Main Room + their allocated room + broadcasts
+    const myRoom = breakoutRoomId || 'main';
+    return messages.filter((m) =>
+      m.breakoutRoomId === myRoom || m.breakoutRoomId === 'main' || m.breakoutRoomId === 'broadcast'
+    );
+  }, [messages, breakoutRoomId, activeRoom, isBroadcastChat, isTeacher]);
 
   // Auto-scroll
   useEffect(() => {
@@ -225,7 +232,7 @@ export default function Chat({
   return (
     <div className="flex flex-col h-full bg-transparent">
       {/* Room tabs (teacher only, inside chat) */}
-      {!isBroadcastChat && roomTabs.length > 1 && (
+      {!isBroadcastChat && roomTabs.length > 1 && isTeacher && (
         <div className="flex border-b border-gray-800 overflow-x-auto scrollbar-hide">
           {roomTabs.map((roomId) => (
             <button
