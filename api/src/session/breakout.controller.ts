@@ -115,30 +115,13 @@ export class BreakoutController {
     @Param('sessionId') sessionId: string,
     @Body() body: BreakoutModeBody,
   ) {
-    const { PrismaClient } = require('@prisma/client');
-    const prisma = new PrismaClient();
-    const session = await prisma.session.findFirst({
-      where: { id: sessionId, tenantId: req.tenantId },
-      include: { course: { select: { instructorId: true } } },
-    });
-    if (!session) return { success: false, error: 'Session not found' };
-    if (session.course.instructorId !== req.user.id) {
-      return { success: false, error: 'Only instructor' };
-    }
-
-    const raw = (session.breakoutConfig ?? {}) as any;
-    const config = raw.assignments ? raw : { assignments: raw };
-    const updated = {
-      ...config,
-      assignmentMode: body.assignmentMode,
-      groupCount: body.groupCount,
-    };
-    await prisma.session.update({
-      where: { id: sessionId },
-      data: { breakoutConfig: updated as any },
-    });
-    await prisma.$disconnect();
-
-    return { success: true, mode: body.assignmentMode };
+    const result = await this.breakoutService.setMode(
+      req.tenantId,
+      sessionId,
+      req.user.id,
+      body.assignmentMode,
+      body.groupCount,
+    );
+    return result;
   }
 }

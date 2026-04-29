@@ -138,6 +138,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   }, [livekitParticipants, localParticipant, isTeacher]);
 
   const students = participants.filter((p) => !p.isTeacher);
+  const assignableParticipants = participants; // ALL participants including teachers
   const totalParticipants = participants.length;
 
   /* deduplicated student count (excludes duplicate identity entries) */
@@ -161,16 +162,16 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     return { ...assignments };
   }, [assignments]);
 
-  /* grouped students by room (includes manual overrides) */
+  /* grouped assignable participants by room */
   const groups = useMemo(() => {
     const g: Record<string, Student[]> = {};
-    students.forEach((s) => {
+    assignableParticipants.forEach((s) => {
       const roomId = mergedAssignments[s.identity] || s.breakoutRoomId || 'main';
       if (!g[roomId]) g[roomId] = [];
       g[roomId].push(s);
     });
     return g;
-  }, [students, mergedAssignments]);
+  }, [assignableParticipants, mergedAssignments]);
 
   /* room health */
   const roomHealth = useMemo(() => {
@@ -351,13 +352,13 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     return Object.keys(groups).filter((id) => id !== 'main');
   }, [groups]);
 
-  /* unassigned students for manual mode */
-  const unassignedStudents = useMemo(() => {
-    return students.filter((s) => {
+  /* unassigned participants for manual mode */
+  const unassignedParticipants = useMemo(() => {
+    return assignableParticipants.filter((s) => {
       const assignedRoom = mergedAssignments[s.identity] || s.breakoutRoomId;
       return !assignedRoom || assignedRoom === 'main';
     });
-  }, [students, mergedAssignments]);
+  }, [assignableParticipants, mergedAssignments]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -493,13 +494,13 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
           <div data-testid="unassigned-pool" className="border border-dashed border-gray-600 rounded-lg bg-gray-800/20 p-2">
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs font-medium text-gray-300">Unassigned</span>
-              <span className="text-[10px] text-gray-500">{unassignedStudents.length} student{unassignedStudents.length !== 1 ? 's' : ''}</span>
+              <span className="text-[10px] text-gray-500">{unassignedParticipants.length} student{unassignedParticipants.length !== 1 ? 's' : ''}</span>
             </div>
             <div className="space-y-1">
-              {unassignedStudents.length === 0 && (
+              {unassignedParticipants.length === 0 && (
                 <p className="text-[10px] text-gray-500 text-center py-1">All students assigned</p>
               )}
-              {unassignedStudents.map((s) => (
+              {unassignedParticipants.map((s) => (
                 <div key={s.identity} className="flex items-center justify-between bg-gray-800/40 rounded px-2 py-1">
                   <StudentAvatar participant={s} scores={engagementScores} />
                 </div>
@@ -534,10 +535,10 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                       </div>
                     ))}
                     {/* Dropped unassigned can be added here via buttons */}
-                    {unassignedStudents.length > 0 && (
+                    {unassignedParticipants.length > 0 && (
                       <div className="pt-1 flex flex-wrap gap-1">
                         <span className="text-[10px] text-gray-500 mr-1">Assign:</span>
-                        {unassignedStudents.map((s) => (
+                        {unassignedParticipants.map((s) => (
                           <button
                             key={s.identity}
                             data-testid={`assign-to-room-${idx}`}

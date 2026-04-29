@@ -77,8 +77,10 @@ export class BreakoutService {
       include: { course: { select: { instructorId: true } } },
     });
     if (!session) throw new NotFoundException('Session not found');
-    if (session.course.instructorId !== userId) {
-      throw new ForbiddenException('Only the course instructor can manage breakout rooms');
+    const isHost = session.userId === userId; // actual session host
+    const isInstructor = session.course.instructorId === userId;
+    if (!isHost && !isInstructor) {
+      throw new ForbiddenException('Only the session host or course instructor can manage breakout rooms');
     }
 
     // Update each participant's metadata + permissions in LiveKit
@@ -211,8 +213,10 @@ export class BreakoutService {
       include: { course: { select: { instructorId: true } } },
     });
     if (!session) throw new NotFoundException('Session not found');
-    if (session.course.instructorId !== userId) {
-      throw new ForbiddenException('Only the course instructor can manage breakout rooms');
+    const isHost = session.userId === userId; // actual session host
+    const isInstructor = session.course.instructorId === userId;
+    if (!isHost && !isInstructor) {
+      throw new ForbiddenException('Only the session host or course instructor can manage breakout rooms');
     }
 
     const config = this.normalizeConfig(session.breakoutConfig);
@@ -303,5 +307,42 @@ export class BreakoutService {
       groups.get(room)![pid] = room;
     }
     return Array.from(groups.values());
+  }
+
+  /**
+   * Set assignment mode and groupCount on the session config.
+   */
+  async setMode(
+    tenantId: string,
+    sessionId: string,
+    userId: string,
+    assignmentMode: 'AUTO' | 'MANUAL' | 'SELF_SELECT',
+    groupCount?: number,
+  ) {
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId, tenantId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) throw new NotFoundException('Session not found');
+    const isHost = session.userId === userId;
+    const isInstructor = session.course.instructorId === userId;
+    if (!isHost && !isInstructor) {
+      throw new ForbiddenException('Only the session host or course instructor can set mode');
+    }
+
+    const current = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      select: { breakoutConfig: true },
+    });
+    const config = this.normalizeConfig(current?.breakoutConfig);
+    config.assignmentMode = assignmentMode;
+    if (groupCount !== undefined) config.groupCount = groupCount;
+
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { breakoutConfig: config as any },
+    });
+
+    return { success: true, mode: assignmentMode };
   }
 }
