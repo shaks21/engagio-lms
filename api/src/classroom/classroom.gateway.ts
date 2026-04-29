@@ -406,13 +406,14 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
         focusActive: (data.payload as { status?: string })?.status === "focus",
       });
     } else if (data.type === "CHAT") {
+      const chatPayload = data.payload as { text?: string; message?: string; breakoutRoomId?: string | null };
       this.server.to(sessionSocket).emit("chat-message", {
         id: Date.now().toString(),
         userId,
         clientId: client.id,
         userName: userName || userId?.slice(0, 8) || "User",
-        text: (data.payload as { text?: string; message?: string })?.text ||
-            (data.payload as { text?: string; message?: string })?.message || "",
+        text: chatPayload?.text || chatPayload?.message || "",
+        breakoutRoomId: chatPayload?.breakoutRoomId || null,
         timestamp: new Date().toISOString(),
       });
     } else if (data.type === "QUESTION") {

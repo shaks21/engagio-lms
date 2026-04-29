@@ -355,11 +355,12 @@ export default function FocusLayout({
   const remoteParticipants = allParticipants.filter((p) => {
     if (p.sid === localParticipant.sid) return false;
     if (p.isLocal) return false;
-    // TEACHER: sees everyone. STUDENT: only peers in the same breakout room.
-    if (isTeacher) return true;
     const theirRoomId = getBreakoutRoomId(p);
     const sameRoom = myRoomId === theirRoomId;
     const bothUnassigned = !myRoomId && !theirRoomId;
+    // TEACHER: default to same room (main room). Control-View modal shows other rooms.
+    if (isTeacher) return sameRoom || bothUnassigned;
+    // STUDENT: only peers in the same breakout room.
     return sameRoom || bothUnassigned;
   });
 
@@ -394,14 +395,12 @@ export default function FocusLayout({
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden relative">
-      {shardLabel && (
-        <div className="px-3 py-1.5 bg-gray-800/70 border-b border-gray-700/40 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-engagio-500 animate-pulse" />
-            <span className="text-xs font-semibold text-engagio-400">Breakout Room: {shardLabel}</span>
-          </div>
+      <div className="px-3 py-1.5 bg-gray-800/70 border-b border-gray-700/40 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-engagio-500 animate-pulse" />
+          <span className="text-xs font-semibold text-engagio-400">Room: {shardLabel && shardLabel !== 'main' ? shardLabel : 'Main Room'}</span>
         </div>
-      )}
+      </div>
       {/* ── Main stage ── */}
       <div className="flex-1 overflow-hidden relative">
         {remoteParticipants.length === 0 && !focusedParticipant ? (

@@ -176,13 +176,21 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   /* grouped assignable participants by room */
   const groups = useMemo(() => {
     const g: Record<string, Student[]> = {};
+    // Always show Main Room and breakout rooms
+    g['main'] = [];
+    for (let i = 0; i < roomCount; i++) {
+      g[`room-${String.fromCharCode(97 + i)}`] = [];
+    }
     assignableParticipants.forEach((s) => {
-      const roomId = mergedAssignments[s.identity] || s.breakoutRoomId || 'main';
+      // In preview or manual editing, use ONLY local state (no stale metadata fallback)
+      const roomId = (showingPreview || allocationMode === 'MANUAL')
+        ? (mergedAssignments[s.identity] || 'main')
+        : (mergedAssignments[s.identity] || s.breakoutRoomId || 'main');
       if (!g[roomId]) g[roomId] = [];
       g[roomId].push(s);
     });
     return g;
-  }, [assignableParticipants, mergedAssignments]);
+  }, [assignableParticipants, mergedAssignments, roomCount, assignments, previewAssignments, allocationMode, showingPreview]);
 
   /* room health */
   const roomHealth = useMemo(() => {
@@ -298,10 +306,14 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     setLoading(true);
     const token = localStorage.getItem('engagio_token');
     try {
+      // Only shuffle students; host/teacher stays in Main Room
+      const studentIds = assignableParticipants
+        .filter((p) => !p.isTeacher)
+        .map((p) => p.identity);
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/auto`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ groupCount: roomCount }),
+        body: JSON.stringify({ groupCount: roomCount, participants: studentIds }),
       });
       if (!res.ok) throw new Error(`Shuffle failed: ${res.status}`);
       const data = await res.json();
@@ -355,19 +367,18 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     setAssignments((prev) => {
       const next = { ...prev };
       delete next[identity];
+      // Immediately persist with the updated assignments
+      if (roomName) {
+        const token = localStorage.getItem('engagio_token');
+        fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+          body: JSON.stringify({ assignments: { ...next, [identity]: null } }),
+        }).catch((e) => console.warn('Unallocate failed:', e));
+      }
       return next;
     });
-    // Immediately persist
-    if (!roomName) return;
-    const token = localStorage.getItem('engagio_token');
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ assignments: { ...assignments, [identity]: null } }),
-      });
-    } catch (e) { console.warn('Unallocate failed:', e); }
-  }, [roomName, assignments]);
+  }, [roomName]);
 
   /* Normal view: move a participant to a different room */
   const changeParticipantRoom = useCallback(async (identity: string, newRoomId: string) => {
@@ -565,7 +576,32 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                     Auto Shuffle
                   </button>
                   <button
-                    onClick={() => setAllocationMode(allocationMode === 'MANUAL' ? null : 'MANUAL')}
+                    onClick={async () => {
+                      const enteringManual = allocationMode !== 'MANUAL';
+                      setAllocationMode(enteringManual ? 'MANUAL' : null);
+                      if (enteringManual && roomName) {
+                        // Load fresh assignments from API before editing
+                        setLoading(true);
+                        const token = localStorage.getItem('engagio_token');
+                        try {
+                          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
+                            headers: { Authorization: `Bearer ${token || ''}` },
+                          });
+                          if (res.ok) {
+                            const data = await res.json();
+                            if (data.assignments) setAssignments(data.assignments);
+                            // Also sync roomCount if server returned groupCount
+                            if (data.groupCount && data.groupCount >= 1 && data.groupCount <= MAX_ROOMS) {
+                              setRoomCount(data.groupCount);
+                            }
+                          }
+                        } catch (e) {
+                          console.warn('[BreakoutTab] Failed to load fresh assignments:', e);
+                        } finally {
+                          setLoading(false);
+                        }
+                      }
+                    }}
                     disabled={loading}
                     className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
                       allocationMode === 'MANUAL'
@@ -578,7 +614,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                   </button>
                   <button
                     onClick={handleCloseAllRooms}
-                    disabled={loading || Object.keys(assignments).length === 0}
+                    disabled={loading || roomIds.length === 0}
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 border border-red-500/30 text-red-400 text-xs font-medium transition-colors"
                   >
                     {loading ? <Loader className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
@@ -597,7 +633,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
           {/* Unassigned pool */}
           <div data-testid="unassigned-pool" className="border border-dashed border-gray-600 rounded-lg bg-gray-800/20 p-2">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-gray-300">Unassigned</span>
+              <span className="text-xs font-medium text-gray-300">Main Room</span>
               <span className="text-[10px] text-gray-500">{unassignedParticipants.length} student{unassignedParticipants.length !== 1 ? 's' : ''}</span>
             </div>
             <div className="space-y-1">
@@ -632,7 +668,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                         <button
                           onClick={() => moveStudent(m.identity, null)}
                           className="text-gray-500 hover:text-red-400 transition-colors"
-                          title="Move to unassigned"
+                          title="Move to Main Room"
                         >
                           <Minus className="w-3 h-3" />
                         </button>
@@ -700,23 +736,46 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
             )}
             {Object.entries(groups).map(([roomId, members]) => {
               if (roomId === 'main') {
-                // If no assignments exist yet, show all students in main
-                if (Object.keys(assignments).length === 0) {
-                  return (
-                    <div key="main" className="border border-gray-700/50 rounded-lg bg-gray-800/30">
-                      <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30">
-                        <span className="text-sm font-medium text-white">Main Room</span>
-                        <span className="text-[10px] text-gray-500">{members.length} student{members.length !== 1 ? 's' : ''}</span>
-                      </div>
-                      <div className="p-2 space-y-1.5">
-                        {members.map((m) => (
-                          <StudentAvatar key={m.identity} participant={m} scores={engagementScores} />
-                        ))}
-                      </div>
+                return (
+                  <div key="main" data-testid="breakout-room-card" className="border border-gray-700/50 rounded-lg bg-gray-800/30">
+                    <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30">
+                      <span className="text-sm font-medium text-white">Main Room</span>
+                      <span className="text-[10px] text-gray-500">{members.length} student{members.length !== 1 ? 's' : ''}</span>
                     </div>
-                  );
-                }
-                return null; // hide empty main when rooms exist
+                    <div className="p-2 space-y-1.5">
+                      {members.map((m) => (
+                        <div key={m.identity} className="flex items-center justify-between">
+                          <div className="flex-1 min-w-0">
+                            <StudentAvatar participant={m} scores={engagementScores} />
+                          </div>
+                          {isTeacher && (
+                            <div className="flex items-center gap-1 ml-1">
+                              <select
+                                data-testid={`change-room-${m.identity}`}
+                                value={mergedAssignments[m.identity] || m.breakoutRoomId || 'main'}
+                                onChange={(e) => changeParticipantRoom(m.identity, e.target.value)}
+                                className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-[9px] text-white focus:outline-none"
+                                title="Change room"
+                              >
+                                <option value="main">Main Room</option>
+                                {Array.from({ length: roomCount }, (_, i) => `room-${String.fromCharCode(97 + i)}`).map((r) => (
+                                  <option key={r} value={r}>{r}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => unallocateParticipant(m.identity)}
+                                className="text-gray-500 hover:text-red-400 transition-colors p-0.5"
+                                title="Move to Main Room"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
               }
 
               const health = roomHealth[roomId] || { avg: 0, count: members.length, status: 'red' as const };
@@ -775,7 +834,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                               className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-[9px] text-white focus:outline-none"
                               title="Change room"
                             >
-                              <option value="main">Unassigned</option>
+                              <option value="main">Main Room</option>
                               {Array.from({ length: roomCount }, (_, i) => `room-${String.fromCharCode(97 + i)}`).map((r) => (
                                 <option key={r} value={r}>{r}</option>
                               ))}
@@ -783,7 +842,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
                             <button
                               onClick={() => unallocateParticipant(m.identity)}
                               className="text-gray-500 hover:text-red-400 transition-colors p-0.5"
-                              title="Move to unassigned"
+                              title="Move to Main Room"
                             >
                               <Minus className="w-3 h-3" />
                             </button>

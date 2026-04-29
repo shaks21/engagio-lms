@@ -240,7 +240,6 @@ export class BreakoutService {
           sessionId,
           participantId,
           JSON.stringify({ ...currentMeta, breakoutRoomId: null }),
-          BreakoutService.getMainRoomPermissions(),
         );
         this.logger.log(`Revoked permissions for ${participantId} (back to main)`);
       } catch { /* participant may be gone */ }

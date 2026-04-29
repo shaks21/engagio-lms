@@ -20,6 +20,7 @@ import {
   Pin,
   Hand,
   Layers,
+  Megaphone,
 } from 'lucide-react';
 import type { Participant } from 'livekit-client';
 import { Track } from 'livekit-client';
@@ -27,7 +28,7 @@ import Chat from './Chat';
 import Poll, { type PollData } from './Poll';
 import BreakoutTab from './BreakoutTab';
 
-export type SidebarTab = 'chat' | 'participants' | 'qa' | 'poll' | 'breakout';
+export type SidebarTab = 'chat' | 'participants' | 'qa' | 'poll' | 'breakout' | 'broadcast';
 
 export interface SidebarProps {
   open: boolean;
@@ -50,6 +51,7 @@ export interface SidebarProps {
     text: string;
     timestamp: Date;
     isOwn: boolean;
+    breakoutRoomId: string | null;
   }>;
   onAddChatMessage: (msg: {
     id: string;
@@ -58,11 +60,14 @@ export interface SidebarProps {
     text: string;
     timestamp: Date;
     isOwn: boolean;
+    breakoutRoomId: string | null;
   }) => void;
   isTeacher?: boolean;
   polls?: PollData[];
   onCreatePoll?: (question: string, options: string[]) => void;
   onVotePoll?: (pollId: string, optionId: string) => void;
+  breakoutRoomId?: string | null;
+  availableRooms?: string[];
 }
 
 /* ─── Live participant row ─── */
@@ -87,6 +92,14 @@ function LiveParticipantRow({
   const cameraOff = !cameraPub || !cameraPub.isSubscribed || cameraPub.isMuted;
   const ssPub = participant.getTrackPublication(Track.Source.ScreenShare);
   const screenSharing = !!ssPub && ssPub.isSubscribed && !ssPub.isMuted;
+
+  // Breakout room label for mobile / participants list
+  const roomLabel = (() => {
+    try {
+      const meta = JSON.parse(participant.metadata || '{}');
+      return meta.breakoutRoomId || null;
+    } catch { return null; }
+  })();
 
   const initials = name
     .split(' ')
@@ -126,6 +139,13 @@ function LiveParticipantRow({
           {name}
           {isLocal && <span className="text-engagio-400 text-xs">(You)</span>}
           {isPinned && <Pin className="w-3 h-3 text-engagio-400 flex-shrink-0" />}
+          {roomLabel ? (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-engagio-600/30 text-engagio-300 border border-engagio-500/30 whitespace-nowrap">
+              {roomLabel === 'main' ? 'Main Room' : roomLabel}
+            </span>
+          ) : (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-700/40 text-gray-300 border border-gray-600/30 whitespace-nowrap">Main Room</span>
+          )}
           {isHandRaised && <span className="text-yellow-400 text-xs font-medium ml-1">🙋 Hand Raised</span>}
         </p>
         <p className="text-[11px] text-gray-500 capitalize">{isLocal ? 'Host' : 'Participant'}</p>
@@ -361,6 +381,8 @@ export default function Sidebar({
   polls,
   onCreatePoll,
   onVotePoll,
+  breakoutRoomId,
+  availableRooms,
 }: SidebarProps) {
   const pollCount = polls?.filter((p) => p.status === 'active').length ?? 0;
 
@@ -423,6 +445,13 @@ export default function Sidebar({
                 onClick={() => onTabChange('breakout')}
               />
             )}
+            <TabButton
+              id="broadcast"
+              label="Broadcast"
+              icon={Megaphone}
+              active={tab === 'broadcast'}
+              onClick={() => { onTabChange('broadcast'); onResetChatCount?.(); }}
+            />
 
             <button
               onClick={onClose}
@@ -444,6 +473,26 @@ export default function Sidebar({
                   sessionId={sessionId}
                   messages={chatMessages}
                   onAddMessage={onAddChatMessage}
+                  breakoutRoomId={breakoutRoomId || 'main'}
+                  roomTitle={isTeacher ? 'All Rooms' : undefined}
+                  isTeacher={isTeacher}
+                  availableRooms={availableRooms || [breakoutRoomId || 'main']}
+                />
+              </div>
+            )}
+            {tab === 'broadcast' && (
+              <div className="h-full">
+                <Chat
+                  userId={userId || ''}
+                  userName={userName || 'Anonymous'}
+                  socket={socket}
+                  sessionId={sessionId}
+                  messages={chatMessages}
+                  onAddMessage={onAddChatMessage}
+                  isBroadcastChat={true}
+                  isTeacher={isTeacher}
+                  roomTitle="Broadcast to All Rooms"
+                  readOnly={!isTeacher}
                 />
               </div>
             )}

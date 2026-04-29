@@ -69,7 +69,7 @@ export default function GlassHeader({
           {roomLabel && (
             <span className="flex items-center gap-1 text-engagio-400">
               <LayoutGrid className="w-3 h-3" />
-              <span className="hidden sm:inline">{roomLabel}</span>
+              <span>{roomLabel}</span>
             </span>
           )}
         </div>

@@ -17,7 +17,6 @@ import type { Message as ChatMessageType } from './Chat';
 import PreJoin from './PreJoin';
 import type { PollData } from './Poll';
 import PollToast from './PollToast';
-import BroadcastOverlay from './BroadcastOverlay';
 
 /* ───────────────── types ───────────────── */
 
@@ -197,7 +196,8 @@ function useBreakoutSubscription(
         } catch {}
 
         if (isTeacher) {
-          // Teacher: subscribe to ALL, LOW quality video for bandwidth
+          // Teacher: subscribe to ALL participants so Control-View monitoring works,
+          // but FocusLayout will only DISPLAY the current room's participants.
           participant.trackPublications.forEach((pub) => {
             if (pub.kind === Track.Kind.Video && pub.setVideoQuality) {
               pub.setVideoQuality(0);
@@ -301,8 +301,8 @@ function InnerRoomUI({
     }
   }, [room.localParticipant.metadata]);
 
-  const shardLabel = localBreakoutId ? localBreakoutId : undefined;
-  const roomLabel = localBreakoutId ? localBreakoutId : 'Main Room';
+  const shardLabel = localBreakoutId || 'main';
+  const roomLabel = localBreakoutId || 'Main Room';
 
   // Expose room for E2E tests
   useEffect(() => {
@@ -313,10 +313,26 @@ function InnerRoomUI({
   // Sync media state from LiveKit (polls every 500ms — reliable + no event listener bugs)
   const { micMuted, cameraOff, screenShareActive } = useSyncMediaState(room);
 
+  /* Detect breakout room assignments from metadata and show 1s loading overlay */
+  useEffect(() => {
+    const newRoomId = (() => {
+      try { return JSON.parse(room.localParticipant.metadata || '{}').breakoutRoomId || null; }
+      catch { return null; }
+    })();
+    const displayRoom = newRoomId || 'Main Room';
+    const lastRoom = (window as any).__lastRoomId;
+    if (lastRoom !== undefined && lastRoom !== displayRoom) {
+      setMovingToRoom(displayRoom);
+      setTimeout(() => setMovingToRoom(null), 1000);
+    }
+    (window as any).__lastRoomId = displayRoom;
+  }, [room.localParticipant.metadata]);
+
   // View state
   const [viewMode, setViewMode] = useState<ViewMode>('focus');
   const [sidebarOpen, setSidebarOpen] = useState(true);                  // default open on desktop
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('chat');
+  const [movingToRoom, setMovingToRoom] = useState<string | null>(null);
   const [pinnedSid, setPinnedSid] = useState<string | undefined>(undefined);
   const [handRaised, setHandRaised] = useState(false);
   const [raisedHands, setRaisedHands] = useState<Record<string, boolean>>({});
@@ -417,6 +433,7 @@ function InnerRoomUI({
       userName: string;
       text: string;
       timestamp: string;
+      breakoutRoomId?: string | null;
     }) => {
       if (data.userId === userId) return; // own messages already added optimistically
       setChatMessages((prev) => [
@@ -428,14 +445,35 @@ function InnerRoomUI({
           text: data.text,
           timestamp: new Date(data.timestamp),
           isOwn: false,
+          breakoutRoomId: data.breakoutRoomId || null,
         },
       ]);
       // increment unread only when chat tab is not active
       setUnreadChatCount((prev) => prev + 1);
     };
-
+    const onGlobalBroadcast = (data: { content: string; senderId: string; timestamp: string }) => {
+      if (!data?.content) return;
+      const msgId = `broadcast_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: msgId,
+          userId: data.senderId || 'system',
+          userName: 'Broadcast',
+          text: data.content,
+          timestamp: new Date(data.timestamp || Date.now()),
+          isOwn: false,
+          breakoutRoomId: 'broadcast',
+        },
+      ]);
+      setUnreadChatCount((prev) => prev + 1);
+    };
     socket.on('chat-message', onChatMessage);
-    return () => { socket.off('chat-message', onChatMessage); };
+    socket.on('global-broadcast-chat', onGlobalBroadcast);
+    return () => {
+      socket.off('chat-message', onChatMessage);
+      socket.off('global-broadcast-chat', onGlobalBroadcast);
+    };
   }, [socket, userId]);
 
   // Listen for poll events — survives sidebar unmount
@@ -629,19 +667,6 @@ function InnerRoomUI({
 
   return (
       <>
-      {/* Global Broadcast Overlay (teacher composer + student toasts) */}
-      <BroadcastOverlay
-        socket={socket}
-        isTeacher={isTeacher}
-        onSendBroadcast={isTeacher ? (content: string) => {
-          if (!socket || !sessionId) return;
-          socket.emit('broadcast-chat', { sessionId, content }, (res: any) => {
-            if (res?.status === 'ok') {
-              addToast({ id: Date.now().toString(), message: 'Broadcast sent', type: 'success' });
-            }
-          });
-        } : undefined}
-      />
       {/* Floating Header — sticky to avoid overlapping sidebar */}
       <div className="sticky top-0 z-50">
         <GlassHeader
@@ -681,10 +706,12 @@ function InnerRoomUI({
             raisedHands={raisedHands}
             chatMessages={chatMessages}
             onAddChatMessage={handleAddChatMessage}
-            isTeacher={user?.role === 'TEACHER' || user?.role === 'ADMIN'}
+            isTeacher={isTeacher}
             polls={polls}
             onCreatePoll={handleCreatePoll}
             onVotePoll={handleVotePoll}
+            breakoutRoomId={localBreakoutId}
+            availableRooms={Array.from(new Set(['main', ...(Object.values(breakoutAssignments || {}))]))}
           />
         </div>
 
@@ -706,10 +733,12 @@ function InnerRoomUI({
             raisedHands={raisedHands}
             chatMessages={chatMessages}
             onAddChatMessage={handleAddChatMessage}
-            isTeacher={user?.role === 'TEACHER' || user?.role === 'ADMIN'}
+            isTeacher={isTeacher}
             polls={polls}
             onCreatePoll={handleCreatePoll}
             onVotePoll={handleVotePoll}
+            breakoutRoomId={localBreakoutId}
+            availableRooms={Array.from(new Set(['main', ...(Object.values(breakoutAssignments || {}))]))}
           />
         </div>
 
@@ -722,6 +751,15 @@ function InnerRoomUI({
             isTeacher={isTeacher}
             shardLabel={shardLabel}
           />
+          {/* Moving to breakout room overlay */}
+          {movingToRoom && (
+            <div className="absolute inset-0 z-50 bg-black/70 flex items-center justify-center backdrop-blur-sm">
+              <div className="text-center">
+                <div className="w-12 h-12 border-2 border-engagio-400 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <p className="text-white text-sm font-medium">Moving to {movingToRoom}…</p>
+              </div>
+            </div>
+          )}
         </main>
       </div>
 

@@ -135,7 +135,7 @@ export default function RoomMonitorModal({ roomCode, onClose }: MonitorModalProp
             <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
             <h3 className="text-sm font-semibold text-white">Monitor: {roomCode}</h3>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-yellow-900/40 text-yellow-400 border border-yellow-500/20">
-              God-View (Invisible)
+              Control-View (Invisible)
             </span>
           </div>
           <div className="flex items-center gap-2">
