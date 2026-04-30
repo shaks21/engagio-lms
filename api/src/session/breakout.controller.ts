@@ -16,6 +16,7 @@ import { TenantGuard } from '../tenancy/tenant.guard';
 import {
   BreakoutPatchBody,
   BreakoutAutoBody,
+  BreakoutPreviewBody,
   BreakoutSelfSelectBody,
   BreakoutModeBody,
 } from './dto/breakout.dto';
@@ -91,6 +92,24 @@ export class BreakoutController {
     );
 
     return { success: true, assignments: result, algorithm };
+  }
+
+  @Post('preview')
+  @HttpCode(HttpStatus.OK)
+  async preview(
+    @Request() req,
+    @Param('sessionId') sessionId: string,
+    @Body() body: BreakoutPreviewBody,
+  ) {
+    let participants: string[] = body.participants ?? [];
+    if (participants.length === 0) {
+      const roomInfo = await this.breakoutService.listParticipants(sessionId);
+      // Exclude the host/instructor from auto-shuffle (they stay in main)
+      participants = roomInfo.filter((id) => id !== req.user.id);
+    }
+
+    const assignments = BreakoutService.roundRobin(participants, body.groupCount, { allowEmptyRooms: true });
+    return { success: true, assignments, algorithm: 'ROUND_ROBIN' };
   }
 
   @Post('self-select')

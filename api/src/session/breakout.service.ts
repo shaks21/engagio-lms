@@ -267,11 +267,16 @@ export class BreakoutService {
 
   /**
    * Round-robin assign participants across N rooms for even distribution.
+   * @param allowEmptyRooms - if true, do not cap groupCount at participant count
    */
-  static roundRobin(participants: string[], groupCount: number): Record<string, string> {
+  static roundRobin(participants: string[], groupCount: number, opts?: { allowEmptyRooms?: boolean }): Record<string, string> {
     const MAX_ROOMS = 25;
-    if (groupCount < 2 || groupCount > MAX_ROOMS) groupCount = Math.min(Math.max(groupCount, 2), MAX_ROOMS);
-    groupCount = Math.min(groupCount, MAX_ROOMS);
+    if (groupCount < 2) groupCount = 2;
+    if (groupCount > MAX_ROOMS) groupCount = MAX_ROOMS;
+
+    if (!opts?.allowEmptyRooms) {
+      groupCount = Math.min(groupCount, participants.length || 1);
+    }
 
     // Fisher-Yates shuffle for randomness
     const shuffled = [...participants];

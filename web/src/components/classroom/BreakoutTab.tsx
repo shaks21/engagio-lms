@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { LogOut, Shuffle, Users, Layers, Radio, RadioOff, Eye, Loader, Move, Plus, Minus, X, Check, ArrowRightLeft } from 'lucide-react';
+import { LogOut, Shuffle, Users, Radio, RadioOff, Eye, Loader, Plus, Minus, X, Check } from 'lucide-react';
 import { useParticipants, useLocalParticipant } from '@livekit/components-react';
 import { useAuth } from '@/lib/auth-context';
 import { useEngagement } from '@/hooks/useEngagement';
@@ -10,6 +10,7 @@ import RoomMonitorModal from './RoomMonitorModal';
 interface BreakoutTabProps {
   roomName: string;
   socket?: any;
+  onToast?: (toast: { id: string; message: string; type?: 'info' | 'success' | 'warning' | 'error' }) => void;
 }
 
 /* ─── types ─── */
@@ -90,7 +91,7 @@ function StudentAvatar({ participant, scores }: { participant: any; scores: any[
 }
 
 /* ─── Main component ─── */
-export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
+export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabProps) {
   const livekitParticipants = useParticipants();
   const { localParticipant } = useLocalParticipant();
   const { user } = useAuth();
@@ -276,55 +277,62 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
 
   /* ── handlers ── */
 
-  const generatePreview = useCallback(() => {
-    // Local preview: Fisher-Yates shuffle + round-robin across roomCount
-    const pids = assignableParticipants.filter((p) => !p.isTeacher).map((p) => p.identity);
-    if (pids.length === 0) return {};
-    const shuffled = [...pids];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  const handleShuffle = useCallback(async () => {
+    if (!roomName) return;
+    setLoading(true);
+    try {
+      const token = localStorage.getItem('engagio_token');
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/preview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+        body: JSON.stringify({ groupCount: roomCount }),
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Preview failed: ${res.status} ${body}`);
+      }
+      const data = await res.json();
+      const assignments: Record<string, string> = data.assignments || {};
+      // Ensure teacher stays in main room in the preview
+      if (localParticipant?.identity) {
+        assignments[localParticipant.identity] = 'main';
+      }
+      setPreviewAssignments(assignments);
+      setShowingPreview(true);
+      setAllocationMode('AUTO');
+    } catch (e: any) {
+      onToast?.({ id: Date.now().toString(), message: e.message || 'Failed to preview shuffle', type: 'error' });
+    } finally {
+      setLoading(false);
     }
-    const preview: Record<string, string> = {};
-    shuffled.forEach((pid, idx) => {
-      const roomIdx = idx % roomCount;
-      preview[pid] = `room-${String.fromCharCode(97 + roomIdx)}`;
-    });
-    return preview;
-  }, [assignableParticipants, roomCount]);
-
-  const handleShuffle = useCallback(() => {
-    // Enter preview mode
-    const preview = generatePreview();
-    setPreviewAssignments(preview);
-    setShowingPreview(true);
-    setAllocationMode('AUTO');
-  }, [generatePreview]);
+  }, [roomName, roomCount, localParticipant?.identity, onToast]);
 
   const acceptPreviewAssignments = useCallback(async () => {
-    if (!socket || !roomName || !previewAssignments) return;
+    if (!roomName || !previewAssignments) return;
     setLoading(true);
     const token = localStorage.getItem('engagio_token');
     try {
-      // Save the PREVIEWED assignments (not a new random shuffle).
-      // We send them via PATCH so the server stores exactly what was previewed.
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
         body: JSON.stringify({ assignments: previewAssignments }),
       });
-      if (!res.ok) throw new Error(`Save preview failed: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`LiveKit Connection Timeout: ${res.status} ${body}`);
+      }
       setAssignments(previewAssignments);
       setPreviewAssignments(null);
       setShowingPreview(false);
       setAllocationMode(null);
-    } catch (e) {
-      console.error('[BreakoutTab] Save preview error:', e);
-      alert('Failed to save auto shuffle. Please try again.');
+      onToast?.({ id: Date.now().toString(), message: 'Breakout assignments confirmed', type: 'success' });
+    } catch (e: any) {
+      onToast?.({ id: Date.now().toString(), message: e.message || 'Save preview failed', type: 'error' });
+      // Do NOT clear previewAssignments so user can try again
     } finally {
       setLoading(false);
     }
-  }, [socket, roomName, previewAssignments]);
+  }, [roomName, previewAssignments, onToast]);
 
   const cancelShuffle = useCallback(() => {
     setPreviewAssignments(null);
@@ -333,7 +341,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
   }, []);
 
   const handleCloseAllRooms = useCallback(async () => {
-    if (!socket || !roomName) return;
+    if (!roomName) return;
     setLoading(true);
     const token = localStorage.getItem('engagio_token');
     try {
@@ -341,16 +349,21 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
         method: 'POST',
         headers: { Authorization: `Bearer ${token || ''}` },
       });
-      if (!res.ok) throw new Error(`Close rooms failed: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Close rooms failed: ${res.status} ${body}`);
+      }
       setAssignments({});
       setAllocationMode(null);
-    } catch (e) {
-      console.error('[BreakoutTab] Close All Rooms error:', e);
-      alert('Failed to close breakout rooms. Please try again.');
+      setPreviewAssignments(null);
+      setShowingPreview(false);
+      onToast?.({ id: Date.now().toString(), message: 'All rooms closed', type: 'success' });
+    } catch (e: any) {
+      onToast?.({ id: Date.now().toString(), message: e.message || 'Failed to close rooms', type: 'error' });
     } finally {
       setLoading(false);
     }
-  }, [socket, roomName]);
+  }, [roomName, onToast]);
 
   const handleToggleBroadcast = useCallback(() => {
     if (!socket || !roomName) return;
@@ -364,7 +377,6 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
     setAssignments((prev) => {
       const next = { ...prev };
       delete next[identity];
-      // Immediately persist with the updated assignments
       if (roomName) {
         const token = localStorage.getItem('engagio_token');
         fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
@@ -416,15 +428,18 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
         body: JSON.stringify({ assignments }),
       });
-      if (!res.ok) throw new Error(`Manual assign failed: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Manual assign failed: ${res.status} ${body}`);
+      }
       setAllocationMode(null);
-    } catch (e) {
-      console.error('[BreakoutTab] Manual save error:', e);
-      alert('Failed to save manual assignments. Please try again.');
+      onToast?.({ id: Date.now().toString(), message: 'Manual allocations saved', type: 'success' });
+    } catch (e: any) {
+      onToast?.({ id: Date.now().toString(), message: e.message || 'Failed to save manual assignments', type: 'error' });
     } finally {
       setLoading(false);
     }
-  }, [roomName, assignments]);
+  }, [roomName, assignments, onToast]);
 
   /* compute per-room capacity hint */
   const capacityHint = useMemo(() => {
@@ -722,7 +737,7 @@ export default function BreakoutTab({ roomName, socket }: BreakoutTabProps) {
       {showingPreview && allocationMode === 'AUTO' && (
         <div className="px-3 py-1.5 bg-engagio-600/10 border-b border-engagio-500/20">
           <p className="text-[10px] text-engagio-300">
-            ⚠️ Preview mode — review allocations below, then click Confirm or Cancel
+            📝 Draft mode — review allocations below, then click Confirm to commit
           </p>
         </div>
       )}

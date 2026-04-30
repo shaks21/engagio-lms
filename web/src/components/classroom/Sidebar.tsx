@@ -30,6 +30,8 @@ import BreakoutTab from './BreakoutTab';
 
 export type SidebarTab = 'chat' | 'participants' | 'qa' | 'poll' | 'breakout' | 'broadcast';
 
+import ToastContainer, { type Toast } from './ToastContainer';
+
 export interface SidebarProps {
   open: boolean;
   tab: SidebarTab;
@@ -68,6 +70,7 @@ export interface SidebarProps {
   onVotePoll?: (pollId: string, optionId: string) => void;
   breakoutRoomId?: string | null;
   availableRooms?: string[];
+  onToast?: (toast: Toast) => void;
 }
 
 /* ─── Live participant row ─── */
@@ -383,6 +386,7 @@ export default function Sidebar({
   onVotePoll,
   breakoutRoomId,
   availableRooms,
+  onToast,
 }: SidebarProps) {
   const pollCount = polls?.filter((p) => p.status === 'active').length ?? 0;
 
@@ -518,7 +522,7 @@ export default function Sidebar({
 
             {tab === 'breakout' && isTeacher && (
               <div className="h-full">
-                <BreakoutTab roomName={sessionId} socket={socket} />
+                <BreakoutTab roomName={sessionId} socket={socket} onToast={onToast} />
               </div>
             )}
           </div>

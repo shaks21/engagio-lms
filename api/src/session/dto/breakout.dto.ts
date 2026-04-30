@@ -31,6 +31,16 @@ export class BreakoutAutoBody {
   participants?: string[];
 }
 
+export class BreakoutPreviewBody {
+  @IsNumber()
+  groupCount!: number;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  participants?: string[];
+}
+
 export class BreakoutSelfSelectBody {
   @IsOptional()
   @IsString()

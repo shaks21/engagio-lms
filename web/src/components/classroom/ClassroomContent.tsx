@@ -727,6 +727,7 @@ function InnerRoomUI({
             onVotePoll={handleVotePoll}
             breakoutRoomId={localBreakoutId}
             availableRooms={Array.from(new Set(['main', ...(Object.values(breakoutAssignments || {}))]))}
+            onToast={addToast}
           />
         </div>
 
@@ -754,6 +755,7 @@ function InnerRoomUI({
             onVotePoll={handleVotePoll}
             breakoutRoomId={localBreakoutId}
             availableRooms={Array.from(new Set(['main', ...(Object.values(breakoutAssignments || {}))]))}
+            onToast={addToast}
           />
         </div>
 
