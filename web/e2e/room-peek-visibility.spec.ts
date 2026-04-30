@@ -212,6 +212,9 @@ test('room peek visibility — invisible monitor subscribes audio, students do n
   expect(afterStudentBCount.count).toBe(beforeStudentBCount.count);
 
   /* 🔟  Teacher stops monitoring */
+  // Close modal first so the button is clickable
+  await tPage.click('[data-testid="monitor-modal"] [data-testid="close-room-monitor"]');
+  await tPage.waitForTimeout(500);
   await tPage.click('[data-testid="stop-monitor"]');
   await tPage.waitForTimeout(1000);
 

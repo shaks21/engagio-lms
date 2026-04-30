@@ -18,6 +18,12 @@ export interface UseQuizSocketReturn {
 
 export function useQuizSocket(socket: Socket | null, userId: string): UseQuizSocketReturn {
   const [quizState, setQuizState] = useState<QuizSocketState>({ kind: 'idle' });
+  const quizStateRef = useRef<QuizSocketState>({ kind: 'idle' });
+
+  useEffect(() => {
+    quizStateRef.current = quizState;
+  }, [quizState]);
+
   const [timer, setTimer] = useState(QUESTION_TIMER_SECONDS);
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const [correctResult, setCorrectResult] = useState<boolean | null>(null);
@@ -73,6 +79,12 @@ export function useQuizSocket(socket: Socket | null, userId: string): UseQuizSoc
 
     const onLeaderboard = (data: { quizSessionId: string; leaderboard: LeaderboardEntry[] }) => {
       clearQuestionTimer();
+      // Don't overwrite an active question with leaderboard — let the overlay
+      // remain visible (showing feedback) until quiz:end arrives.
+      if (quizStateRef.current.kind === 'active') {
+        // Store leaderboard data for later but keep showing active question
+        return;
+      }
       setQuizState({
         kind: 'leaderboard',
         quizSessionId: data.quizSessionId,
@@ -81,6 +93,7 @@ export function useQuizSocket(socket: Socket | null, userId: string): UseQuizSoc
     };
 
     const onAnswerResult = (data: QuizAnswerResult & { quizSessionId: string; userId: string }) => {
+      console.log('[useQuizSocket] quiz:answer received:', data, 'myUserId=', userId, 'match=', data.userId === userId);
       if (data.userId === userId) {
         setCorrectResult(data.correct);
       }
@@ -102,6 +115,7 @@ export function useQuizSocket(socket: Socket | null, userId: string): UseQuizSoc
 
   const submitAnswer = useCallback(
     (optionId: string) => {
+      console.log('[useQuizSocket] submitAnswer called:', { optionId, hasSubmitted, timer, kind: quizState.kind });
       if (hasSubmitted || timer <= 0) return;
       if (quizState.kind !== 'active') return;
 

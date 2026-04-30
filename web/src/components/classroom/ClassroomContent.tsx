@@ -828,9 +828,13 @@ function InnerRoomUI({
 }
 
 function QuizOverlayPortal({ socket, userId }: { socket: Socket | null; userId: string }) {
+  const { user } = useAuth();
+  const isTeacher = user?.role === 'TEACHER' || user?.role === 'ADMIN';
   const { quizState, timer, hasSubmitted, isDisabled, correctResult, submitAnswer, currentQuestionIndex } =
     useQuizSocket(socket, userId);
 
+  // Teachers don't get the quiz overlay — they control via the sidebar QuizPanel
+  if (isTeacher) return null;
   if (quizState.kind !== 'active') return null;
   return (
     <QuizOverlay

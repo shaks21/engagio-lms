@@ -116,6 +116,6 @@ test('State-First Preview: teacher clicks shuffle, sees draft, confirms, student
     console.log('✅ State-First Preview test passed');
   } finally {
     for (const s of students) { try { await s.ctx.close(); } catch (e) { /* ignore */ } }
-    try { await tCtx.close(); } catch (e) { /* ignore */ } }
+    try { await tCtx.close(); } catch (e) { /* ignore */ }
   }
 });

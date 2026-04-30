@@ -519,6 +519,7 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
             <button
               onClick={() => {
                 if (!socket) return;
+                setShowMonitorModal(false);
                 socket.emit('stop-monitor', { sessionId: roomName }, (res: any) => {
                   if (res?.status === 'ok') { setIsMonitoring(false); setMonitorTarget(null); }
                 });

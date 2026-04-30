@@ -166,37 +166,47 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     const tenantId = client.data.tenantId as string | undefined;
     const sessionId = client.data.sessionId as string | undefined;
 
+    this.logger.log(`quiz-answer received: userId=${userId}, tenantId=${tenantId}, sessionId=${sessionId}, quizSessionId=${quizSessionId}, optionId=${optionId}`);
+
     if (!tenantId || !quizSessionId || !optionId || !userId) {
+      this.logger.warn(`quiz-answer rejected: missing fields. tenantId=${tenantId}, userId=${userId}, quizSessionId=${quizSessionId}`);
       return { status: "error", message: "Missing required fields" };
     }
 
-    const result = await this.quizService.submitAnswer(
-      tenantId,
-      quizSessionId,
-      userId,
-      optionId,
-      basePoints,
-    );
-
-    // Broadcast answer result to the user directly
-    client.emit("quiz:answer", {
-      quizSessionId,
-      userId,
-      score: result.score,
-      correct: result.correct,
-      totalScore: result.totalScore,
-    });
-
-    // After each answer, broadcast leaderboard update
-    if (sessionId) {
-      const leaderboard = await this.quizService.getLeaderboard(tenantId, quizSessionId);
-      this.server.to(`session::${sessionId}`).emit("quiz:leaderboard", {
+    try {
+      const result = await this.quizService.submitAnswer(
+        tenantId,
         quizSessionId,
-        leaderboard,
-      });
-    }
+        userId,
+        optionId,
+        basePoints,
+      );
 
-    return { status: "ok", score: result.score, correct: result.correct, totalScore: result.totalScore };
+      this.logger.log(`quiz-answer processed: userId=${userId}, correct=${result.correct}, score=${result.score}`);
+
+      // Broadcast answer result to the user directly
+      client.emit("quiz:answer", {
+        quizSessionId,
+        userId,
+        score: result.score,
+        correct: result.correct,
+        totalScore: result.totalScore,
+      });
+
+      // After each answer, broadcast leaderboard update
+      if (sessionId) {
+        const leaderboard = await this.quizService.getLeaderboard(tenantId, quizSessionId);
+        this.server.to(`session::${sessionId}`).emit("quiz:leaderboard", {
+          quizSessionId,
+          leaderboard,
+        });
+      }
+
+      return { status: "ok", score: result.score, correct: result.correct, totalScore: result.totalScore };
+    } catch (err: any) {
+      this.logger.error(`quiz-answer error: ${err.message}`);
+      return { status: "error", message: err.message || "Failed to submit answer" };
+    }
   }
 
   @SubscribeMessage("get-quiz-leaderboard")

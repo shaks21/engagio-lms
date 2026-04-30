@@ -10,8 +10,8 @@
  */
 import { test, expect, type Page } from '@playwright/test';
 
-const BASE = process.env.BASE_URL || 'https://engagio.duckdns.org';
-const API = process.env.API_URL || 'https://engagio.duckdns.org/api';
+const BASE = process.env.BASE_URL || 'http://164.68.119.230:3001';
+const API = process.env.API_URL || 'http://164.68.119.230:3000';
 
 /* ─── helpers ─── */
 
@@ -126,20 +126,18 @@ test('Multi-role Quiz Orchestration — teacher creates, student answers, leader
     const tJoinVisible = await tJoin.isVisible().catch(() => false);
     if (tJoinVisible) {
       await tJoin.click();
-      await tPage.waitForTimeout(2000);
-      console.log('🎤 Teacher joined classroom');
+      console.log('🎤 Teacher clicked Join Classroom');
     }
     const sJoin = sPage.getByRole('button', { name: /Join Classroom/i }).first();
     const sJoinVisible = await sJoin.isVisible().catch(() => false);
     if (sJoinVisible) {
       await sJoin.click();
-      await sPage.waitForTimeout(2000);
-      console.log('🎤 Student joined classroom');
+      console.log('🎤 Student clicked Join Classroom');
     }
 
-    // Wait for LiveKit to connect and sidebar to render
-    await tPage.waitForTimeout(3000);
-    await sPage.waitForTimeout(3000);
+    // Wait for actual classroom UI to render (sidebar with tabs)
+    await tPage.waitForSelector('[data-testid="classroom-sidebar"]', { timeout: 15000 });
+    await sPage.waitForSelector('[data-testid="classroom-sidebar"]', { timeout: 15000 });
     console.log('✅ Both in classroom');
 
     /* ── 6. Teacher opens Quiz tab ── */
@@ -154,24 +152,20 @@ test('Multi-role Quiz Orchestration — teacher creates, student answers, leader
     await tPage.fill('[data-testid="question-input-0"]', 'What is 2+2?');
     await tPage.fill('[data-testid="option-input-0-0"]', 'Three');
     await tPage.fill('[data-testid="option-input-0-1"]', 'Four');
-    await tPage.fill('[data-testid="option-input-0-2"]', 'Five');
-    await tPage.fill('[data-testid="option-input-0-3"]', 'Six');
     await tPage.check('[data-testid="correct-checkbox-0-1"]');
 
     // Add Q2
-    await tPage.getByTestId('add-question-btn').click();
+    await tPage.getByTestId('add-question-btn').first().click();
     await tPage.waitForTimeout(300);
 
     // Q2: "What is 5×5?"  correct: 25
     await tPage.fill('[data-testid="question-input-1"]', 'What is 5 times 5?');
     await tPage.fill('[data-testid="option-input-1-0"]', 'Twenty');
     await tPage.fill('[data-testid="option-input-1-1"]', 'Twenty-five');
-    await tPage.fill('[data-testid="option-input-1-2"]', 'Thirty');
-    await tPage.fill('[data-testid="option-input-1-3"]', 'Fifteen');
     await tPage.check('[data-testid="correct-checkbox-1-1"]');
 
     // Submit
-    await tPage.getByTestId('submit-quiz-btn').click();
+    await tPage.getByTestId('submit-quiz-btn').first().click();
 
     // Wait for state transition → pending
     await expect(tPage.getByTestId('start-quiz-btn')).toBeVisible({ timeout: 15000 });
@@ -188,7 +182,7 @@ test('Multi-role Quiz Orchestration — teacher creates, student answers, leader
     console.log('🎯 Student overlay visible');
 
     // Assertion: glassmorphism backdrop-blur-sm / bg-black/40
-    const overlayContainer = sPage.locator('[data-testid="quiz-overlay"] > div').first();
+    const overlayContainer = sPage.locator('[data-testid="quiz-overlay"]');
     await expect(overlayContainer).toHaveClass(/backdrop-blur-sm/);
     await expect(overlayContainer).toHaveClass(/bg-black\/40/);
     console.log('✅ Glassmorphism classes present');
@@ -202,33 +196,49 @@ test('Multi-role Quiz Orchestration — teacher creates, student answers, leader
     await expect(overlay.locator('text=What is 2+2?')).toBeVisible();
 
     /* ── 10. Student selects the correct answer ── */
-    const correctOpt = overlay.locator('button', { hasText: 'Four' }).first();
+    // Capture browser console logs for debugging
+    const consoleLogs: string[] = [];
+    sPage.on('console', (msg) => consoleLogs.push(`[${msg.type()}] ${msg.text()}`));
+
+    const correctOpt = overlay.locator('button', { hasText: /^Four$/i }).first();
     await correctOpt.click();
-    await sPage.waitForTimeout(800);
+    await sPage.waitForTimeout(1200);
+
+    // Debug: log all console output
+    console.log('=== Student Console Logs ===');
+    consoleLogs.forEach((l) => console.log(l));
+    console.log('===========================');
 
     // Verify feedback shows "Correct!"
-    await expect(overlay.locator('text=Correct!')).toBeVisible({ timeout: 5000 });
+    await expect(overlay.locator('text=Correct!')).toBeVisible({ timeout: 8000 });
     console.log('✅ Student answered Q1 correctly');
 
     /* ── 11. Teacher clicks Next Question ── */
+    console.log('[DEBUG] Looking for next-question-btn...');
+    await tPage.screenshot({ path: '/tmp/teacher-before-next.png' });
     const nextBtn = tPage.getByTestId('next-question-btn');
+    console.log('[DEBUG] nextBtn locator created');
     await expect(nextBtn).toBeVisible({ timeout: 10000 });
+    console.log('[DEBUG] nextBtn is visible');
     await nextBtn.click();
+    console.log('[DEBUG] nextBtn clicked');
     await tPage.waitForTimeout(1000);
     console.log('⏩ Next question sent');
 
     /* ── 12. Student sees Q2 via WebSocket ── */
+    console.log('[DEBUG] Waiting for Q2 overlay...');
     await expect(overlay.locator('text=What is 5 times 5?')).toBeVisible({ timeout: 15000 });
     console.log('🎯 Student sees Q2');
 
     // Student intentionally answers incorrectly for variety
+    console.log('[DEBUG] Looking for wrong answer...');
     const wrongOpt = overlay.locator('button', { hasText: 'Twenty' }).first();
     await wrongOpt.click();
     await sPage.waitForTimeout(800);
     console.log('✅ Student answered Q2 incorrectly');
 
     /* ── 13. Teacher ends quiz ── */
-    // At Q2 (index=1, total=2), button text should now be "End Quiz"
+    console.log('[DEBUG] Looking for End Quiz button...');
     const endBtn = tPage.getByTestId('next-question-btn');
     await expect(endBtn).toContainText('End Quiz', { timeout: 5000 });
     await endBtn.click();

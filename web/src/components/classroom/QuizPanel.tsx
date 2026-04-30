@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { BrainCircuit, Trophy } from 'lucide-react';
 import QuizCreatorForm, { type QuizFormData } from './QuizCreatorForm';
 import QuizHostControl from './QuizHostControl';
@@ -27,6 +27,39 @@ export default function QuizPanel({ sessionId, socket, isTeacher }: QuizPanelPro
   const API = process.env.NEXT_PUBLIC_API_URL || '';
 
   const getToken = () => typeof window !== 'undefined' ? localStorage.getItem('auth_token') || '' : '';
+
+  /* ── Listen for quiz socket events (teacher side) ── */
+  useEffect(() => {
+    if (!socket || !isTeacher) return;
+
+    const onQuestion = (data: { quizSessionId: string; questionIndex: number }) => {
+      setCurrentQuestionIndex(data.questionIndex);
+      setStatus('active');
+    };
+    const onEnd = (data: { quizSessionId: string }) => {
+      if (data.quizSessionId === quizSessionId) {
+        setStatus('completed');
+        setCurrentQuestionIndex(totalQuestions);
+      }
+    };
+    const onLeaderboard = (data: { quizSessionId: string; leaderboard: LeaderboardEntry[] }) => {
+      if (data.quizSessionId === quizSessionId) {
+        setLeaderboard(data.leaderboard);
+        setActiveLeaderboardId(quizSessionId);
+        setShowLeaderboard(true);
+      }
+    };
+
+    socket.on('quiz:question', onQuestion);
+    socket.on('quiz:end', onEnd);
+    socket.on('quiz:leaderboard', onLeaderboard);
+
+    return () => {
+      socket.off('quiz:question', onQuestion);
+      socket.off('quiz:end', onEnd);
+      socket.off('quiz:leaderboard', onLeaderboard);
+    };
+  }, [socket, isTeacher, quizSessionId, totalQuestions]);
 
   const handleCreateQuiz = useCallback(
     async (questions: QuizFormData['questions']) => {

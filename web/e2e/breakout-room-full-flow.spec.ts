@@ -113,7 +113,7 @@ test('Breakout Room Full E2E Flow', async ({ browser }) => {
     await snap(tPage, '03_teacher_breakout_tab');
 
     // ── Step 5: Shuffle ──
-    const shuffleBtn = tPage.getByRole('button', { name: /Shuffle into Rooms/i });
+    const shuffleBtn = tPage.getByRole('button', { name: /Auto Shuffle/i });
     await expect(shuffleBtn).toBeVisible({ timeout: 8000 });
     await shuffleBtn.click();
     await tPage.waitForTimeout(2000);
