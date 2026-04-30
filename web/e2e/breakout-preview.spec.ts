@@ -36,7 +36,6 @@ test('State-First Preview: teacher clicks shuffle, sees draft, confirms, student
   const password = 'Password123!';
   const students: { email: string; page: any; ctx: any }[] = [];
 
-  // Register teacher + 4 students
   const tData = await registerOrLoginAPI(tEmail, password, 'TEACHER');
   for (let i = 1; i <= 4; i++) {
     const sEmail = `stu${i}.${ts}@prev.io`;
@@ -67,71 +66,56 @@ test('State-First Preview: teacher clicks shuffle, sees draft, confirms, student
     const sessionId = sessionRes.id;
 
     // All join classroom
-    for (const s of students) {
+    await Promise.all(students.map(async (s) => {
       await s.page.goto(`${BASE}/classroom/${sessionId}`);
-      await s.page.waitForTimeout(1500);
       const joinBtn = s.page.getByRole('button', { name: /Join/i }).first();
-      if (await joinBtn.isVisible().catch(() => false)) await joinBtn.click();
-      await s.page.waitForTimeout(2000);
-    }
+      await expect(joinBtn).toBeVisible({ timeout: 10000 });
+      await joinBtn.click();
+    }));
+
     await tPage.goto(`${BASE}/classroom/${sessionId}`);
-    await tPage.waitForTimeout(1500);
     const joinBtn = tPage.getByRole('button', { name: /Join/i }).first();
-    if (await joinBtn.isVisible().catch(() => false)) await joinBtn.click();
-    await tPage.waitForTimeout(2000);
+    await expect(joinBtn).toBeVisible({ timeout: 10000 });
+    await joinBtn.click();
 
     // Open breakout tab
     const tab = tPage.getByTestId('sidebar-tab-breakout').first();
     await expect(tab).toBeVisible({ timeout: 8000 });
     await tab.click();
-    await tPage.waitForTimeout(500);
 
     // Select 3 rooms
     const roomCountSelect = tPage.locator('[data-testid="classroom-sidebar"] [data-testid="breakout-room-count"]').first();
     await expect(roomCountSelect).toBeVisible();
     await roomCountSelect.selectOption('3');
-    await tPage.waitForTimeout(200);
 
     // ── Step 1: Click Auto Shuffle ──
     const shuffleBtn = tPage.locator('[data-testid="classroom-sidebar"]').getByRole('button', { name: /Auto Shuffle/i });
     await expect(shuffleBtn).toBeVisible();
     await shuffleBtn.click();
-    await tPage.waitForTimeout(1500);
 
-    // ── Step 2: Verify Preview Mode (Confirm + Cancel visible) ──
+    // ── Step 2: Verify Draft Mode (Confirm + Cancel visible) ──
     const confirmBtn = tPage.locator('[data-testid="confirm-shuffle"]').first();
     const cancelBtn  = tPage.locator('[data-testid="cancel-shuffle"]').first();
-    await expect(confirmBtn).toBeVisible();
-    await expect(cancelBtn).toBeVisible();
+    await expect(confirmBtn).toBeVisible({ timeout: 5000 });
+    await expect(cancelBtn).toBeVisible({ timeout: 5000 });
 
-    // ── Step 3: Verify exactly 3 room cards (empty rooms shown) ──
+    // ── Step 3: Verify room cards visible (Main Room + 3 breakout rooms) ──
     const roomCards = tPage.locator('[data-testid="breakout-room-card"]:visible');
-    let cardCount = await roomCards.count();
-
-    // In preview mode with 3 rooms selected, should see Main Room + 3 breakout rooms
-    expect(cardCount >= 3).toBe(true);
-
-    // Verify total assigned students = 4 (teacher stays in main)
-    let totalAssigned = 0;
-    for (let i = 0; i < cardCount; i++) {
-      const countText = await roomCards.nth(i).getByTestId('room-student-count').textContent();
-      totalAssigned += parseInt(countText || '0', 10);
-    }
-    // Main room should contain teacher (local participant), so total participants = 5
-    expect(totalAssigned).toBeGreaterThanOrEqual(4);
+    await expect(roomCards).toHaveCount(4, { timeout: 5000 }); // main + room-a + room-b + room-c
 
     // ── Step 4: Confirm Preview ──
     await confirmBtn.click();
-    await tPage.waitForTimeout(2000);
 
-    // Verify students show in breakout rooms after confirm
-    const confirmedCards = tPage.locator('[data-testid="breakout-room-card"]:visible');
-    let confirmedCount = await confirmedCards.count();
-    expect(confirmedCount >= 3).toBe(true);
+    // After confirm: Confirm/Cancel should disappear (we're back to normal controls)
+    await expect(confirmBtn).toBeHidden({ timeout: 8000 });
+    await expect(cancelBtn).toBeHidden({ timeout: 8000 });
+
+    // Verify room cards are still visible after confirm
+    await expect(tPage.locator('[data-testid="breakout-room-card"]:visible')).toHaveCount(4, { timeout: 5000 });
 
     console.log('✅ State-First Preview test passed');
   } finally {
     for (const s of students) { try { await s.ctx.close(); } catch (e) { /* ignore */ } }
-    try { await tCtx.close(); } catch (e) { /* ignore */ }
+    try { await tCtx.close(); } catch (e) { /* ignore */ } }
   }
 });

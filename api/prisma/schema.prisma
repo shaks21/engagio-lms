@@ -27,6 +27,10 @@ enum EventType {
   TEACHER_INTERVENTION
   POLL_CREATED
   POLL_VOTE
+  QUIZ_STARTED
+  QUIZ_QUESTION_SENT
+  QUIZ_ANSWER_SUBMITTED
+  QUIZ_ENDED
 }
 
 model Tenant {
@@ -39,6 +43,7 @@ model Tenant {
   events                EngagementEvent[]
   engagementSnapshots   EngagementSnapshot[]
   polls                 Poll[]
+  quizSessions          QuizSession[]
   createdAt             DateTime           @default(now())
   updatedAt             DateTime           @updatedAt
 }
@@ -107,6 +112,7 @@ model Session {
   breakoutConfig Json?             // Map of userId → breakoutRoomId
   events         EngagementEvent[]
   polls          Poll[]
+  quizSessions   QuizSession[]
 
   @@index([tenantId])
   @@index([userId])
@@ -165,13 +171,14 @@ model Poll {
 }
 
 model PollOption {
-  id        String    @id @default(uuid())
-  pollId    String
-  poll      Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
-  text      String
-  sortOrder Int       @default(0)
-  createdAt DateTime  @default(now())
-  votes     PollVote[]
+  id         String    @id @default(uuid())
+  pollId     String
+  poll       Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean   @default(false)
+  sortOrder  Int       @default(0)
+  createdAt  DateTime  @default(now())
+  votes      PollVote[]
 
   @@index([pollId])
   @@index([sortOrder])
@@ -190,4 +197,36 @@ model PollVote {
   @@index([pollId])
   @@index([optionId])
   @@index([userId])
+}
+
+model QuizSession {
+  id                   String   @id @default(uuid())
+  tenantId             String
+  tenant               Tenant   @relation(fields: [tenantId], references: [id])
+  sessionId            String
+  session              Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  status               String   @default("pending") // pending | active | completed
+  currentQuestionIndex Int      @default(0)
+  questions            Json     // Array<{ pollId: string, createdAt: string }>
+  userStates           UserQuizState[]
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([sessionId])
+  @@index([status])
+}
+
+model UserQuizState {
+  id          String      @id @default(uuid())
+  quizSessionId String
+  quizSession QuizSession @relation(fields: [quizSessionId], references: [id], onDelete: Cascade)
+  userId      String
+  totalScore  Int         @default(0)
+  answers     Json        // Array<{ pollId, optionId, correct, score, timestamp }>
+  updatedAt   DateTime    @updatedAt
+
+  @@index([quizSessionId])
+  @@index([userId])
+  @@index([quizSessionId, totalScore])
 }

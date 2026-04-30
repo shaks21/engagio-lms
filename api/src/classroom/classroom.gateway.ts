@@ -13,6 +13,7 @@ import { Redis } from "ioredis";
 import { createAdapter } from "@socket.io/redis-adapter";
 import { PrismaService } from "../prisma/prisma.service";
 import { IngestService } from "../ingest/ingest.service";
+import { QuizService } from "../quiz/quiz.service";
 import * as process from 'process';
 
 interface Participant {
@@ -61,7 +62,161 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
   constructor(
     private readonly prisma: PrismaService,
     private readonly ingest: IngestService,
+    private readonly quizService: QuizService,
   ) {}
+
+  /* ──────── Quiz Real-Time ──────── */
+  @SubscribeMessage("quiz-start")
+  async handleQuizStart(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { quizSessionId: string; sessionId: string },
+  ) {
+    const { quizSessionId } = data;
+    const senderUserId = client.data.userId as string | undefined;
+    const tenantId = client.data.tenantId as string | undefined;
+    const sessionId = data.sessionId;
+
+    if (!tenantId || !quizSessionId) {
+      return { status: "error", message: "Missing tenantId or quizSessionId" };
+    }
+
+    // Verify sender is teacher
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) return { status: "error", message: "Session not found" };
+    if (session.course?.instructorId !== senderUserId) {
+      return { status: "error", message: "Forbidden: only the teacher can start a quiz" };
+    }
+
+    const result = await this.quizService.startQuiz(tenantId, quizSessionId);
+
+    // Broadcast question to all participants
+    const sessionSocket = `session::${sessionId}`;
+    this.server.to(sessionSocket).emit("quiz:question", {
+      quizSessionId,
+      questionIndex: result.currentQuestionIndex,
+      question: result.currentQuestion,
+    });
+
+    return { status: "ok", quizSessionId, questionIndex: result.currentQuestionIndex };
+  }
+
+  @SubscribeMessage("quiz-next")
+  async handleQuizNext(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { quizSessionId: string; sessionId: string },
+  ) {
+    const { quizSessionId, sessionId } = data;
+    const senderUserId = client.data.userId as string | undefined;
+    const tenantId = client.data.tenantId as string | undefined;
+
+    if (!tenantId || !quizSessionId) {
+      return { status: "error", message: "Missing tenantId or quizSessionId" };
+    }
+
+    // Verify sender is teacher
+    const session = await this.prisma.session.findFirst({
+      where: { id: sessionId },
+      include: { course: { select: { instructorId: true } } },
+    });
+    if (!session) return { status: "error", message: "Session not found" };
+    if (session.course?.instructorId !== senderUserId) {
+      return { status: "error", message: "Forbidden: only the teacher can advance questions" };
+    }
+
+    const result = await this.quizService.nextQuestion(tenantId, quizSessionId);
+
+    const sessionSocket = `session::${sessionId}`;
+    const endedResult = result as { status: string };
+    if (endedResult.status === 'completed') {
+      // Quiz ended
+      this.server.to(sessionSocket).emit("quiz:end", {
+        quizSessionId,
+        status: 'completed',
+      });
+
+      // Emit leaderboard
+      const leaderboard = await this.quizService.getLeaderboard(tenantId, quizSessionId);
+      this.server.to(sessionSocket).emit("quiz:leaderboard", { quizSessionId, leaderboard });
+
+      return { status: "ok", quizSessionId, ended: true };
+    }
+
+    const activeResult = result as any;
+
+    // Broadcast next question
+    this.server.to(sessionSocket).emit("quiz:question", {
+      quizSessionId,
+      questionIndex: activeResult.currentQuestionIndex,
+      question: activeResult.currentQuestion,
+    });
+
+    return { status: "ok", quizSessionId, questionIndex: activeResult.currentQuestionIndex };
+  }
+
+  @SubscribeMessage("quiz-answer")
+  async handleQuizAnswer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { quizSessionId: string; optionId: string; basePoints?: number },
+  ) {
+    const { quizSessionId, optionId, basePoints } = data;
+    const userId = client.data.userId as string | undefined;
+    const tenantId = client.data.tenantId as string | undefined;
+    const sessionId = client.data.sessionId as string | undefined;
+
+    if (!tenantId || !quizSessionId || !optionId || !userId) {
+      return { status: "error", message: "Missing required fields" };
+    }
+
+    const result = await this.quizService.submitAnswer(
+      tenantId,
+      quizSessionId,
+      userId,
+      optionId,
+      basePoints,
+    );
+
+    // Broadcast answer result to the user directly
+    client.emit("quiz:answer", {
+      quizSessionId,
+      userId,
+      score: result.score,
+      correct: result.correct,
+      totalScore: result.totalScore,
+    });
+
+    // After each answer, broadcast leaderboard update
+    if (sessionId) {
+      const leaderboard = await this.quizService.getLeaderboard(tenantId, quizSessionId);
+      this.server.to(`session::${sessionId}`).emit("quiz:leaderboard", {
+        quizSessionId,
+        leaderboard,
+      });
+    }
+
+    return { status: "ok", score: result.score, correct: result.correct, totalScore: result.totalScore };
+  }
+
+  @SubscribeMessage("get-quiz-leaderboard")
+  async handleGetLeaderboard(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { quizSessionId: string },
+  ) {
+    const tenantId = client.data.tenantId as string | undefined;
+    const { quizSessionId } = data;
+
+    if (!tenantId || !quizSessionId) {
+      return { status: "error", message: "Missing tenantId or quizSessionId" };
+    }
+
+    const leaderboard = await this.quizService.getLeaderboard(tenantId, quizSessionId);
+
+    client.emit("quiz:leaderboard", { quizSessionId, leaderboard });
+
+    return { status: "ok", leaderboard };
+  }
 
   async onModuleInit() {}
 

@@ -751,12 +751,15 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
             )}
             {Object.entries(groups).map(([roomId, members]) => {
               if (roomId === 'main') {
-                return (
-                  <div key="main" data-testid="breakout-room-card" className="border border-gray-700/50 rounded-lg bg-gray-800/30">
-                    <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30">
-                      <span className="text-sm font-medium text-white">Main Room</span>
-                      <span className="text-[10px] text-gray-500">{members.length} student{members.length !== 1 ? 's' : ''}</span>
-                    </div>
+              return (
+                <div key="main" data-testid="breakout-room-card" className="border border-gray-700/50 rounded-lg bg-gray-800/30"
+                >
+                  <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30"
+                  >
+                    <span className="text-sm font-medium text-white">Main Room</span>
+                    <span data-testid="room-student-count" className="text-[10px] text-gray-500"
+                    >{members.length} student{members.length !== 1 ? 's' : ''}</span>
+                  </div>
                     <div className="p-2 space-y-1.5">
                       {members.map((m) => (
                         <div key={m.identity} className="flex items-center justify-between">

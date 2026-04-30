@@ -12,6 +12,7 @@ import { AnalyticsModule } from "./analytics/analytics.module";
 import { TenancyModule } from "./tenancy/tenancy.module";
 import { LivekitModule } from "./livekit/livekit.module";
 import { PollsModule } from "./polls/polls.module";
+import { QuizModule } from "./quiz/quiz.module";
 import { AppController } from "./app.controller";
 import { AppService } from "./app.service";
 
@@ -30,6 +31,7 @@ import { AppService } from "./app.service";
     AnalyticsModule,
     LivekitModule,
     PollsModule,
+    QuizModule,
   ],
   controllers: [AppController],
   providers: [AppService],
