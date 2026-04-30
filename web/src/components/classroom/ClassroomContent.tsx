@@ -614,6 +614,37 @@ function InnerRoomUI({
     return () => { socket.off('nudge-received', onNudge); };
   }, [socket, addToast]);
 
+  /* ── Student toast: teacher monitor start / broadcast audio ── */
+  useEffect(() => {
+    if (!socket || isTeacher) return;
+    const onMonitorState = (payload: any) => {
+      if (payload.action === 'START_MONITOR' && payload.notify) {
+        addToast({
+          id: `monitor_${Date.now()}`,
+          message: payload.peekMode
+            ? '👻 The teacher is silently observing your breakout room'
+            : '👁 The teacher is joining your breakout room',
+          type: 'info',
+        });
+      }
+    };
+    const onBroadcastState = (payload: { isBroadcasting: boolean }) => {
+      if (payload.isBroadcasting) {
+        addToast({
+          id: `broadcast_${Date.now()}`,
+          message: '🔊 Teacher is broadcasting audio to all rooms',
+          type: 'info',
+        });
+      }
+    };
+    socket.on('teacher-monitor-state', onMonitorState);
+    socket.on('broadcast-state-changed', onBroadcastState);
+    return () => {
+      socket.off('teacher-monitor-state', onMonitorState);
+      socket.off('broadcast-state-changed', onBroadcastState);
+    };
+  }, [socket, isTeacher, addToast]);
+
   // ── Listen for room commands (host moderation) ──
   useEffect(() => {
     if (!socket) return;

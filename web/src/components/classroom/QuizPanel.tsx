@@ -26,7 +26,7 @@ export default function QuizPanel({ sessionId, socket, isTeacher }: QuizPanelPro
 
   const API = process.env.NEXT_PUBLIC_API_URL || '';
 
-  const getToken = () => typeof window !== 'undefined' ? localStorage.getItem('auth_token') || '' : '';
+  const getToken = () => typeof window !== 'undefined' ? localStorage.getItem('engagio_token') || '' : '';
 
   /* ── Listen for quiz socket events (teacher side) ── */
   useEffect(() => {

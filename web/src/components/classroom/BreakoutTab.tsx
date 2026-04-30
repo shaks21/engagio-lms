@@ -139,13 +139,14 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
   }, [livekitParticipants, localParticipant, isTeacher]);
 
   const students = participants.filter((p) => !p.isTeacher);
+  const remoteStudents = participants.filter((p) => !p.isLocal);
   const assignableParticipants = participants; // ALL participants including teachers
   const totalParticipants = participants.length;
 
-  /* deduplicated student count (excludes duplicate identity entries) */
+  /* deduplicated student count — count all remote participants (excluding host) */
   const studentCount = useMemo(() => {
-    return new Set(students.map((s) => s.identity)).size;
-  }, [students]);
+    return new Set(remoteStudents.map((s) => s.identity)).size;
+  }, [remoteStudents]);
 
   /* ── state ── */
   const [roomCount, setRoomCount] = useState(2);
@@ -407,15 +408,10 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
 
   /* manual allocation helpers */
   const moveStudent = useCallback((identity: string, toRoomId: string | null) => {
-    setAssignments((prev) => {
-      const next = { ...prev };
-      if (toRoomId === null) {
-        delete next[identity];
-      } else {
-        next[identity] = toRoomId;
-      }
-      return next;
-    });
+    setAssignments((prev) => ({
+      ...prev,
+      [identity]: toRoomId || 'main',
+    }));
   }, []);
 
   const applyManualAssignments = useCallback(async () => {
@@ -423,15 +419,21 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
     setLoading(true);
     const token = localStorage.getItem('engagio_token');
     try {
+      // Build complete assignments including 'main' room entries
+      const completeAssignments: Record<string, string> = {};
+      for (const p of assignableParticipants) {
+        completeAssignments[p.identity] = assignments[p.identity] || 'main';
+      }
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ assignments }),
+        body: JSON.stringify({ assignments: completeAssignments, grantPermissions: true }),
       });
       if (!res.ok) {
         const body = await res.text().catch(() => '');
         throw new Error(`Manual assign failed: ${res.status} ${body}`);
       }
+      setAssignments(completeAssignments);
       setAllocationMode(null);
       onToast?.({ id: Date.now().toString(), message: 'Manual allocations saved', type: 'success' });
     } catch (e: any) {
@@ -439,7 +441,7 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
     } finally {
       setLoading(false);
     }
-  }, [roomName, assignments, onToast]);
+  }, [roomName, assignments, assignableParticipants, onToast]);
 
   /* compute per-room capacity hint */
   const capacityHint = useMemo(() => {
@@ -584,7 +586,7 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
                 <>
                   <button
                     onClick={handleShuffle}
-                    disabled={loading || totalParticipants === 0}
+                    disabled={loading || studentCount === 0}
                     className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/20 hover:bg-engagio-600/30 disabled:opacity-50 border border-engagio-500/30 text-engagio-400 text-xs font-medium transition-colors"
                     data-testid="auto-shuffle-btn"
                   >

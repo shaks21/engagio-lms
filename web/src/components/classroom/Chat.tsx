@@ -117,16 +117,24 @@ export default function Chat({
     return Array.from(set);
   }, [externalRooms, messages]);
 
-  // All room tabs for teachers
+  // All room tabs — teachers see all rooms, students see Main Room + their breakout room
   const roomTabs = useMemo(() => {
     if (isBroadcastChat) return [];
-    const tabs = ['main'];
-    const rooms = new Set(availableRooms);
-    rooms.delete('main');
-    rooms.delete('broadcast');
-    tabs.push(...Array.from(rooms).sort());
+    const tabs: string[] = [];
+    if (isTeacher) {
+      tabs.push('main');
+      const rooms = new Set(availableRooms);
+      rooms.delete('main');
+      rooms.delete('broadcast');
+      tabs.push(...Array.from(rooms).sort());
+    } else {
+      // Students see Main Room tab and their current breakout room tab
+      tabs.push('main');
+      const myRoom = breakoutRoomId || 'main';
+      if (myRoom !== 'main') tabs.push(myRoom);
+    }
     return tabs;
-  }, [isBroadcastChat, availableRooms]);
+  }, [isBroadcastChat, availableRooms, isTeacher, breakoutRoomId]);
 
   // Filter messages
   // Teachers see all rooms; students see only Main Room + their allocated room + broadcasts
@@ -139,11 +147,9 @@ export default function Chat({
       const targetRoom = activeRoom || breakoutRoomId || 'main';
       return messages.filter((m) => m.breakoutRoomId === targetRoom || m.breakoutRoomId === 'broadcast');
     }
-    // Student: always show Main Room + their allocated room + broadcasts
-    const myRoom = breakoutRoomId || 'main';
-    return messages.filter((m) =>
-      m.breakoutRoomId === myRoom || m.breakoutRoomId === 'main' || m.breakoutRoomId === 'broadcast'
-    );
+    // Student: show ONLY the selected tab's room messages + broadcasts
+    const targetRoom = activeRoom || breakoutRoomId || 'main';
+    return messages.filter((m) => m.breakoutRoomId === targetRoom || m.breakoutRoomId === 'broadcast');
   }, [messages, breakoutRoomId, activeRoom, isBroadcastChat, isTeacher]);
 
   // Auto-scroll
@@ -231,8 +237,8 @@ export default function Chat({
 
   return (
     <div className="flex flex-col h-full bg-transparent">
-      {/* Room tabs (teacher only, inside chat) */}
-      {!isBroadcastChat && roomTabs.length > 1 && isTeacher && (
+      {/* Room tabs — teachers AND students */}
+      {!isBroadcastChat && roomTabs.length > 1 && (
         <div className="flex border-b border-gray-800 overflow-x-auto scrollbar-hide">
           {roomTabs.map((roomId) => (
             <button
