@@ -28,7 +28,10 @@ import Chat from './Chat';
 import Poll, { type PollData } from './Poll';
 import BreakoutTab from './BreakoutTab';
 
-export type SidebarTab = 'chat' | 'participants' | 'qa' | 'poll' | 'breakout' | 'broadcast';
+import { BrainCircuit, Trophy } from 'lucide-react';
+import QuizPanel from './QuizPanel';
+
+export type SidebarTab = 'chat' | 'participants' | 'qa' | 'poll' | 'quiz' | 'breakout' | 'broadcast';
 
 import ToastContainer, { type Toast } from './ToastContainer';
 
@@ -450,6 +453,13 @@ export default function Sidebar({
               />
             )}
             <TabButton
+              id="quiz"
+              label="Quiz"
+              icon={BrainCircuit}
+              active={tab === 'quiz'}
+              onClick={() => onTabChange('quiz')}
+            />
+            <TabButton
               id="broadcast"
               label="Broadcast"
               icon={Megaphone}
@@ -519,6 +529,12 @@ export default function Sidebar({
               onCreatePoll={onCreatePoll || (() => {})}
               onVote={onVotePoll || (() => {})}
             />}
+
+            {tab === 'quiz' && (
+              <div className="h-full">
+                <QuizPanel sessionId={sessionId} socket={socket} isTeacher={!!isTeacher} />
+              </div>
+            )}
 
             {tab === 'breakout' && isTeacher && (
               <div className="h-full">

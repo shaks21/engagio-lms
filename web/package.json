@@ -12,6 +12,7 @@
     "test:sync:ui": "playwright test e2e/classroom-sync.spec.ts --ui"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
     "@livekit/components-react": "^2.9.20",
     "@livekit/components-styles": "^1.2.0",
     "axios": "^1.14.0",
@@ -21,9 +22,11 @@
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-hook-form": "^7.74.0",
     "recharts": "^3.8.1",
     "socket.io-client": "^4.7.0",
-    "tailwindcss": "^4.2.2"
+    "tailwindcss": "^4.2.2",
+    "zod": "^4.4.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

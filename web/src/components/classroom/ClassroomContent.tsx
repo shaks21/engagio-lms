@@ -17,7 +17,8 @@ import type { Message as ChatMessageType } from './Chat';
 import PreJoin from './PreJoin';
 import type { PollData } from './Poll';
 import PollToast from './PollToast';
-
+import QuizOverlay from './QuizOverlay';
+import { useQuizSocket } from '@/hooks/useQuizSocket';
 /* ───────────────── types ───────────────── */
 
 interface TokenPayload {
@@ -817,9 +818,29 @@ function InnerRoomUI({
         />
       )}
 
+      {/* Quiz Overlay for students */}
+      <QuizOverlayPortal socket={socket} userId={userId || ''} />
+
       {/* Toast notifications */}
       <ToastContainer toasts={toasts} onRemove={removeToast} />
     </>
+  );
+}
+
+function QuizOverlayPortal({ socket, userId }: { socket: Socket | null; userId: string }) {
+  const { quizState, timer, hasSubmitted, isDisabled, correctResult, submitAnswer, currentQuestionIndex } =
+    useQuizSocket(socket, userId);
+
+  if (quizState.kind !== 'active') return null;
+  return (
+    <QuizOverlay
+      question={quizState.question}
+      questionIndex={currentQuestionIndex}
+      timer={timer}
+      isDisabled={isDisabled}
+      correctResult={correctResult}
+      onSubmitAnswer={submitAnswer}
+    />
   );
 }
 
