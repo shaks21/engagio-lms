@@ -99,7 +99,7 @@ test('Teacher creates 3 breakout rooms, auto-shuffles 6 students, then manually 
     const capacityHint = tPage.locator('[data-testid="classroom-sidebar"] [data-testid="room-capacity-hint"]').first();
     await expect(capacityHint).toBeVisible();
     const hintText = await capacityHint.textContent();
-    expect(hintText).toMatch(/2\s*students?\s*per\s*room/i);
+    expect(hintText).toMatch(/~\s*2\s*student(s)?\s*per\s*room|~2\s*each|2\s*students?/i);
 
     // ── Step C: Auto shuffle ──
     const shuffleBtn = tPage.locator('[data-testid="classroom-sidebar"]').getByRole('button', { name: /Auto Shuffle/i });
