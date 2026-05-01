@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { LogOut, Shuffle, Users, Radio, RadioOff, Eye, Loader, Plus, Minus, X, Check } from 'lucide-react';
+import { LogOut, Eye, ArrowRight, Loader, ChevronDown, ChevronUp, Plus } from 'lucide-react';
 import { useParticipants, useLocalParticipant } from '@livekit/components-react';
 import { useAuth } from '@/lib/auth-context';
 import { useEngagement } from '@/hooks/useEngagement';
 import RoomMonitorModal from './RoomMonitorModal';
+import CreateBreakoutModal from './CreateBreakoutModal';
 
 interface BreakoutTabProps {
   roomName: string;
@@ -18,7 +19,8 @@ interface Student {
   identity: string;
   name: string;
   isLocal: boolean;
-  isTeacher: boolean;  isSpeaking: boolean;
+  isTeacher: boolean;
+  isSpeaking: boolean;
   breakoutRoomId: string | null;
 }
 
@@ -135,9 +137,8 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
       });
     }
     livekitParticipants.forEach((p) => {
-      /* skip duplicate of local participant (livekit sometimes includes it) */
+      /* skip duplicate of local participant */
       if (localParticipant && p.identity === localParticipant.identity) return;
-      // Derive teacher status from LiveKit metadata if available, else false
       const remoteRole = (() => {
         try { return JSON.parse(p.metadata || '{}').role || ''; }
         catch { return ''; }
@@ -157,12 +158,8 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
     return all;
   }, [livekitParticipants, localParticipant, isTeacher]);
 
-  const students = participants.filter((p) => !p.isTeacher);
-  const remoteStudents = participants.filter((p) => !p.isLocal);
-  const assignableParticipants = participants; // ALL participants including teachers
-  const totalParticipants = participants.length;
-
-  /* deduplicated student count — count all remote participants (excluding host) */
+  const assignableParticipants = participants;
+  const remoteStudents = participants.filter((p) => !p.isLocal && !p.isTeacher);
   const studentCount = useMemo(() => {
     return new Set(remoteStudents.map((s) => s.identity)).size;
   }, [remoteStudents]);
@@ -170,48 +167,36 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
   /* ── state ── */
   const [roomCount, setRoomCount] = useState(2);
   const [assignments, setAssignments] = useState<Record<string, string>>({});
-  const [previewAssignments, setPreviewAssignments] = useState<Record<string, string> | null>(null);
-  const [showingPreview, setShowingPreview] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [allocationMode, setAllocationMode] = useState<AllocationMode | null>(null);
   const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [isMonitoring, setIsMonitoring] = useState(false);
   const [monitorTarget, setMonitorTarget] = useState<string | null>(null);
   const [peekMode, setPeekMode] = useState(true);
   const [showMonitorModal, setShowMonitorModal] = useState(false);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [expandedRooms, setExpandedRooms] = useState<Set<string>>(new Set());
 
-  /* current user's room for the main container badge */
+  /* current user's room */
   const myRoomId = useMemo(() => {
     try { return JSON.parse(localParticipant?.metadata || '{}').breakoutRoomId || 'main'; }
     catch { return 'main'; }
   }, [localParticipant?.metadata]);
 
-  /* derived computed assignments merged from backend + local overrides */
-  const mergedAssignments = useMemo(() => {
-    if (showingPreview && previewAssignments) {
-      return { ...previewAssignments };
-    }
-    return { ...assignments };
-  }, [assignments, showingPreview, previewAssignments]);
-
-  /* grouped assignable participants by room */
+  /* grouped participants by room */
   const groups = useMemo(() => {
     const g: Record<string, Student[]> = {};
-    // Always show Main Room and breakout rooms
     g['main'] = [];
-    for (let i = 0; i < roomCount; i++) {
+    const activeRoomCount = Math.max(1, roomCount);
+    for (let i = 0; i < activeRoomCount; i++) {
       g[`room-${String.fromCharCode(97 + i)}`] = [];
     }
     assignableParticipants.forEach((s) => {
-      // In preview or manual editing, use ONLY local state (no stale metadata fallback)
-      const roomId = (showingPreview || allocationMode === 'MANUAL')
-        ? (mergedAssignments[s.identity] || 'main')
-        : (mergedAssignments[s.identity] || s.breakoutRoomId || 'main');
+      const roomId = assignments[s.identity] || s.breakoutRoomId || 'main';
       if (!g[roomId]) g[roomId] = [];
       g[roomId].push(s);
     });
     return g;
-  }, [assignableParticipants, mergedAssignments, roomCount, assignments, previewAssignments, allocationMode, showingPreview]);
+  }, [assignableParticipants, assignments, roomCount]);
 
   /* room health */
   const roomHealth = useMemo(() => {
@@ -238,6 +223,9 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
       .then((r) => r.json())
       .then((data) => {
         if (data.assignments) setAssignments(data.assignments);
+        if (data.groupCount && data.groupCount >= 1 && data.groupCount <= MAX_ROOMS) {
+          setRoomCount(data.groupCount);
+        }
       })
       .catch(() => {});
   }, [roomName]);
@@ -271,12 +259,6 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
         setIsMonitoring(false);
         setMonitorTarget(null);
       }
-      (window as any).__breakoutState = {
-        ...((window as any).__breakoutState || {}),
-        isMonitoring: payload.action === 'START_MONITOR',
-        monitorTarget: payload.roomId || null,
-        peekMode: payload.peekMode !== false,
-      };
     };
     socket.emit('get-monitor-state', { sessionId: roomName }, (res: any) => {
       if (res?.monitorTarget) {
@@ -284,81 +266,12 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
         setMonitorTarget(res.monitorTarget);
         setPeekMode(res.peekMode !== false);
       }
-      (window as any).__breakoutState = {
-        ...((window as any).__breakoutState || {}),
-        isMonitoring: !!res?.monitorTarget,
-        monitorTarget: res?.monitorTarget || null,
-        peekMode: res?.peekMode !== false,
-      };
     });
     socket.on('teacher-monitor-state', onMonitorState);
     return () => { socket.off('teacher-monitor-state', onMonitorState); };
   }, [socket, roomName]);
 
   /* ── handlers ── */
-
-  const handleShuffle = useCallback(async () => {
-    if (!roomName) return;
-    setLoading(true);
-    try {
-      const token = localStorage.getItem('engagio_token');
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts/preview`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ groupCount: roomCount }),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`Preview failed: ${res.status} ${body}`);
-      }
-      const data = await res.json();
-      const assignments: Record<string, string> = data.assignments || {};
-      // Ensure teacher stays in main room in the preview
-      if (localParticipant?.identity) {
-        assignments[localParticipant.identity] = 'main';
-      }
-      setPreviewAssignments(assignments);
-      setShowingPreview(true);
-      setAllocationMode('AUTO');
-    } catch (e: any) {
-      onToast?.({ id: Date.now().toString(), message: e.message || 'Failed to preview shuffle', type: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  }, [roomName, roomCount, localParticipant?.identity, onToast]);
-
-  const acceptPreviewAssignments = useCallback(async () => {
-    if (!roomName || !previewAssignments) return;
-    setLoading(true);
-    const token = localStorage.getItem('engagio_token');
-    try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ assignments: previewAssignments }),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`LiveKit Connection Timeout: ${res.status} ${body}`);
-      }
-      setAssignments(previewAssignments);
-      setPreviewAssignments(null);
-      setShowingPreview(false);
-      setAllocationMode(null);
-      onToast?.({ id: Date.now().toString(), message: 'Breakout assignments confirmed', type: 'success' });
-    } catch (e: any) {
-      onToast?.({ id: Date.now().toString(), message: e.message || 'Save preview failed', type: 'error' });
-      // Do NOT clear previewAssignments so user can try again
-    } finally {
-      setLoading(false);
-    }
-  }, [roomName, previewAssignments, onToast]);
-
-  const cancelShuffle = useCallback(() => {
-    setPreviewAssignments(null);
-    setShowingPreview(false);
-    setAllocationMode(null);
-  }, []);
 
   const handleCloseAllRooms = useCallback(async () => {
     if (!roomName) return;
@@ -374,9 +287,7 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
         throw new Error(`Close rooms failed: ${res.status} ${body}`);
       }
       setAssignments({});
-      setAllocationMode(null);
-      setPreviewAssignments(null);
-      setShowingPreview(false);
+      setRoomCount(2);
       onToast?.({ id: Date.now().toString(), message: 'All rooms closed', type: 'success' });
     } catch (e: any) {
       onToast?.({ id: Date.now().toString(), message: e.message || 'Failed to close rooms', type: 'error' });
@@ -392,144 +303,92 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
       if (res?.status === 'ok') setIsBroadcasting(res.isBroadcasting);
     });
   }, [socket, roomName, isBroadcasting]);
-  /* Normal view: unassign a participant to main */
-  const unallocateParticipant = useCallback(async (identity: string) => {
-    setAssignments((prev) => {
-      const next = { ...prev };
-      delete next[identity];
-      if (roomName) {
-        const token = localStorage.getItem('engagio_token');
-        fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-          body: JSON.stringify({ assignments: { ...next, [identity]: null } }),
-        }).catch((e) => console.warn('Unallocate failed:', e));
-      }
+
+  const handleModalCreated = useCallback((
+    newAssignments: Record<string, string>,
+    newRoomCount: number,
+    mode: AllocationMode
+  ) => {
+    setAssignments(newAssignments);
+    setRoomCount(newRoomCount);
+    setShowCreateModal(false);
+    onToast?.({
+      id: Date.now().toString(),
+      message: mode === 'AUTO'
+        ? `${newRoomCount} breakout rooms created with auto-shuffle`
+        : mode === 'MANUAL'
+        ? `${newRoomCount} breakout rooms created with manual allocation`
+        : `${newRoomCount} breakout rooms created — students can self-select`,
+      type: 'success',
+    });
+  }, [onToast]);
+
+  const toggleRoomExpand = useCallback((roomId: string) => {
+    setExpandedRooms((prev) => {
+      const next = new Set(prev);
+      if (next.has(roomId)) next.delete(roomId);
+      else next.add(roomId);
       return next;
     });
-  }, [roomName]);
-
-  /* Normal view: move a participant to a different room */
-  const changeParticipantRoom = useCallback(async (identity: string, newRoomId: string) => {
-    setAssignments((prev) => ({ ...prev, [identity]: newRoomId }));
-    // Immediately persist
-    if (!roomName) return;
-    const token = localStorage.getItem('engagio_token');
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ assignments: { ...assignments, [identity]: newRoomId } }),
-      });
-    } catch (e) { console.warn('Change room failed:', e); }
-  }, [roomName, assignments]);
-
-
-  /* manual allocation helpers */
-  const moveStudent = useCallback((identity: string, toRoomId: string | null) => {
-    setAssignments((prev) => ({
-      ...prev,
-      [identity]: toRoomId || 'main',
-    }));
   }, []);
 
-  const applyManualAssignments = useCallback(async () => {
-    if (!roomName) return;
-    setLoading(true);
-    const token = localStorage.getItem('engagio_token');
-    try {
-      // Build complete assignments including 'main' room entries
-      const completeAssignments: Record<string, string> = {};
-      for (const p of assignableParticipants) {
-        completeAssignments[p.identity] = assignments[p.identity] || 'main';
-      }
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ assignments: completeAssignments, grantPermissions: true }),
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => '');
-        throw new Error(`Manual assign failed: ${res.status} ${body}`);
-      }
-      setAssignments(completeAssignments);
-      setAllocationMode(null);
-      onToast?.({ id: Date.now().toString(), message: 'Manual allocations saved', type: 'success' });
-    } catch (e: any) {
-      onToast?.({ id: Date.now().toString(), message: e.message || 'Failed to save manual assignments', type: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  }, [roomName, assignments, assignableParticipants, onToast]);
+  /* check if any rooms have assignments */
+  const hasAssignments = useMemo(() => {
+    return Object.keys(assignments).length > 0 && Object.values(assignments).some((r) => r !== 'main');
+  }, [assignments]);
 
-  /* compute per-room capacity hint */
-  const capacityHint = useMemo(() => {
-    if (studentCount === 0) return '';
-    const filledRooms = Math.min(studentCount, roomCount);
-    const emptyRooms = roomCount - filledRooms;
-    return `${studentCount} in ${filledRooms} room${filledRooms !== 1 ? 's' : ''}${emptyRooms > 0 ? ` | ${emptyRooms} empty` : ''}`;
-  }, [studentCount, roomCount]);
-
-  /* room IDs for rendering (excluding 'main') */
   const roomIds = useMemo(() => {
     return Object.keys(groups).filter((id) => id !== 'main');
   }, [groups]);
 
-  /* unassigned participants for manual mode */
-  const unassignedParticipants = useMemo(() => {
-    return assignableParticipants.filter((s) => {
-      // In manual editing, trust ONLY local state; LiveKit metadata is stale
-      const assignedRoom = allocationMode === 'MANUAL'
-        ? mergedAssignments[s.identity]
-        : (mergedAssignments[s.identity] || s.breakoutRoomId);
-      return !assignedRoom || assignedRoom === 'main';
-    });
-  }, [assignableParticipants, mergedAssignments, allocationMode]);
+  /* prepare students array for modal */
+  const modalStudents = useMemo(() => {
+    return remoteStudents.map((s) => ({ identity: s.identity, name: s.name }));
+  }, [remoteStudents]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Header with monitoring controls */}
+      {/* Header */}
       <div className="p-3 border-b border-gray-800 space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Breakout Rooms</p>
           <div className="flex items-center gap-2">
             {isTeacher && (
-              <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  data-testid="peek-visibility-toggle"
-                  checked={peekMode}
-                  onChange={(e) => setPeekMode(e.target.checked)}
-                  className="w-3 h-3 accent-engagio-500 rounded"
-                />
-                Peek
-              </label>
+              <>
+                <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    data-testid="peek-visibility-toggle"
+                    checked={peekMode}
+                    onChange={(e) => setPeekMode(e.target.checked)}
+                    className="w-3 h-3 accent-engagio-500 rounded"
+                  />
+                  Peek
+                </label>
+                <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    data-testid="notify-students-toggle"
+                    checked={!peekMode}
+                    onChange={(e) => setPeekMode(!e.target.checked)}
+                    className="w-3 h-3 accent-engagio-500 rounded"
+                  />
+                  Notify
+                </label>
+                <button
+                  data-testid="broadcast-audio-btn"
+                  onClick={handleToggleBroadcast}
+                  disabled={loading}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    isBroadcasting
+                      ? 'bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30'
+                      : 'bg-engagio-600/20 text-engagio-400 border border-engagio-500/30 hover:bg-engagio-600/30'
+                  }`}
+                >
+                  {isBroadcasting ? 'Stop Broadcast' : 'Broadcast Audio'}
+                </button>
+              </>
             )}
-            {isTeacher && (
-              <label className="flex items-center gap-1.5 text-[10px] text-gray-400 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  data-testid="notify-students-toggle"
-                  checked={!peekMode}
-                  onChange={(e) => setPeekMode(!e.target.checked)}
-                  className="w-3 h-3 accent-engagio-500 rounded"
-                />
-                Notify
-              </label>
-            )}
-            <button
-              data-testid="broadcast-audio-btn"
-              onClick={handleToggleBroadcast}
-              disabled={loading}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                isBroadcasting
-                  ? 'bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30'
-                  : 'bg-engagio-600/20 text-engagio-400 border border-engagio-500/30 hover:bg-engagio-600/30'
-              }`}
-            >
-              {isBroadcasting ? <RadioOff className="w-3.5 h-3.5" /> : <Radio className="w-3.5 h-3.5" />}
-              {isBroadcasting ? 'Stop Broadcast' : 'Broadcast Audio'}
-            </button>
           </div>
         </div>
 
@@ -571,347 +430,169 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
           </div>
         )}
 
-        {/* Teacher controls: room count + shuffle + manual */}
+        {/* Teacher: Create / Close All buttons */}
         {isTeacher && (
-          <div className="space-y-2 pt-1">
-            <div className="flex items-center gap-3">
-              <label className="text-xs text-gray-400">Rooms:</label>
-              <select
-                data-testid="breakout-room-count"
-                value={roomCount}
-                onChange={(e) => setRoomCount(parseInt(e.target.value, 10))}
-                className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:border-engagio-500"
+          <div className="flex items-center gap-2 pt-1">
+            <button
+              data-testid="create-rooms-btn"
+              onClick={() => setShowCreateModal(true)}
+              disabled={loading}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 disabled:opacity-50 border border-blue-500/30 text-blue-400 text-xs font-medium transition-colors"
+            >
+              {loading && <Loader className="w-3.5 h-3.5 animate-spin" />}
+              <Plus className="w-3.5 h-3.5" />
+              {hasAssignments ? 'Configure Rooms' : 'Create Rooms'}
+            </button>
+            {hasAssignments && (
+              <button
+                data-testid="close-all-rooms-btn"
+                onClick={handleCloseAllRooms}
+                disabled={loading}
+                className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 border border-red-500/30 text-red-400 text-xs font-medium transition-colors"
               >
-                {Array.from({ length: MAX_ROOMS }, (_, i) => i + 1).map((n) => {
-                  return (
-                    <option key={n} value={n}>{getRoomAllocationLabel(n, studentCount)}</option>
-                  );
-                })}
-              </select>
-              <span data-testid="room-capacity-hint" className="text-[10px] text-gray-500">
-                {studentCount > 0 ? capacityHint : 'No students'}
-              </span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {showingPreview ? (
-                <>
-                  <button
-                    onClick={acceptPreviewAssignments}
-                    disabled={loading}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/30 hover:bg-engagio-600/50 disabled:opacity-50 border border-engagio-500/30 text-engagio-300 text-xs font-medium transition-colors"
-                    data-testid="confirm-shuffle"
-                  >
-                    {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    Confirm
-                  </button>
-                  <button
-                    onClick={cancelShuffle}
-                    disabled={loading}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 border border-gray-600/30 text-gray-400 text-xs font-medium transition-colors"
-                    data-testid="cancel-shuffle"
-                  >
-                    <X className="w-4 h-4" />
-                    Cancel
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={handleShuffle}
-                    disabled={loading || studentCount === 0}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/20 hover:bg-engagio-600/30 disabled:opacity-50 border border-engagio-500/30 text-engagio-400 text-xs font-medium transition-colors"
-                    data-testid="auto-shuffle-btn"
-                  >
-                    {loading ? <Loader className="w-4 h-4 animate-spin" /> : <Shuffle className="w-4 h-4" />}
-                    Auto Shuffle
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const enteringManual = allocationMode !== 'MANUAL';
-                      setAllocationMode(enteringManual ? 'MANUAL' : null);
-                      if (enteringManual && roomName) {
-                        // Load fresh assignments from API before editing
-                        setLoading(true);
-                        const token = localStorage.getItem('engagio_token');
-                        try {
-                          const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
-                            headers: { Authorization: `Bearer ${token || ''}` },
-                          });
-                          if (res.ok) {
-                            const data = await res.json();
-                            if (data.assignments) setAssignments(data.assignments);
-                            // Also sync roomCount if server returned groupCount
-                            if (data.groupCount && data.groupCount >= 1 && data.groupCount <= MAX_ROOMS) {
-                              setRoomCount(data.groupCount);
-                            }
-                          }
-                        } catch (e) {
-                          console.warn('[BreakoutTab] Failed to load fresh assignments:', e);
-                        } finally {
-                          setLoading(false);
-                        }
-                      }
-                    }}
-                    disabled={loading}
-                    className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                      allocationMode === 'MANUAL'
-                        ? 'bg-engagio-600/40 border-engagio-500/50 text-engagio-300'
-                        : 'bg-gray-700/30 border-gray-600/30 text-gray-400 hover:bg-gray-700/50'
-                    } disabled:opacity-50`}
-                  >
-                    <Users className="w-4 h-4" />
-                    Manual Allocation
-                  </button>
-                  <button
-                    onClick={handleCloseAllRooms}
-                    disabled={loading || roomIds.length === 0}
-                    className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/20 hover:bg-red-600/30 disabled:opacity-50 border border-red-500/30 text-red-400 text-xs font-medium transition-colors"
-                  >
-                    {loading ? <Loader className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
-                    Close All Rooms
-                  </button>
-                </>
-              )}
-            </div>
+                Close All →
+              </button>
+            )}
           </div>
         )}
       </div>
 
-      {/* ── Manual Allocation Mode ── */}
-      {allocationMode === 'MANUAL' && isTeacher && (
-        <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
-          {/* Unassigned pool */}
-          <div data-testid="unassigned-pool" className="border border-dashed border-gray-600 rounded-lg bg-gray-800/20 p-2">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-gray-300">Main Room</span>
-              <span className="text-[10px] text-gray-500">{unassignedParticipants.length} student{unassignedParticipants.length !== 1 ? 's' : ''}</span>
+      {/* ── Room List ── */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
+        {/* Main Room card */}
+        <div
+          data-testid="breakout-room-card"
+          className="border border-gray-700/50 rounded-lg bg-gray-800/30 overflow-hidden"
+        >
+          <div
+            onClick={() => toggleRoomExpand('main')}
+            className="w-full px-3 py-2.5 flex items-center justify-between hover:bg-gray-800/40 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2">
+              <HealthDot status={roomHealth['main']?.status || 'red'} />
+              <span className="text-sm font-medium text-white">Main Room</span>
             </div>
-            <div className="space-y-1">
-              {unassignedParticipants.length === 0 && (
-                <p className="text-[10px] text-gray-500 text-center py-1">All students assigned</p>
-              )}
-              {unassignedParticipants.map((s) => (
-                <div key={s.identity} className="flex items-center justify-between bg-gray-800/40 rounded px-2 py-1">
-                  <StudentAvatar participant={s} scores={engagementScores} />
+            <div className="flex items-center gap-3">
+              <span data-testid="room-student-count" className="text-[10px] text-gray-500">
+                {(groups['main'] || []).length} student{(groups['main'] || []).length !== 1 ? 's' : ''}
+              </span>
+              {expandedRooms.has('main') ? <ChevronUp className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
+            </div>
+          </div>
+          {expandedRooms.has('main') && (
+            <div className="px-3 pb-2.5 space-y-1.5">
+              {(groups['main'] || []).map((m) => (
+                <div key={m.identity} className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <StudentAvatar participant={m} scores={engagementScores} />
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
+          )}
+        </div>
 
-          {/* Room columns */}
-          <div className="grid grid-cols-1 gap-2">
-            {Array.from({ length: roomCount }, (_, i) => `room-${String.fromCharCode(97 + i)}`).map((roomId, idx) => {
-              const members = groups[roomId] || [];
-              return (
-                <div key={roomId} data-testid="breakout-room-card" className="border border-gray-700/50 rounded-lg bg-gray-800/30">
-                  <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30">
-                    <div className="flex items-center gap-2">
-                      <HealthDot status={roomHealth[roomId]?.status || 'red'} />
-                      <span className="text-sm font-medium text-white">{roomId}</span>
-                      <span data-testid="room-student-count" className="text-[10px] text-gray-500">{members.length} student{members.length !== 1 ? 's' : ''}</span>
-                    </div>
+        {/* Breakout room cards */}
+        {roomIds.map((roomId) => {
+          const members = groups[roomId] || [];
+          const health = roomHealth[roomId] || { avg: 0, count: members.length, status: 'red' as const };
+          const isExpanded = expandedRooms.has(roomId);
+
+          return (
+            <div
+              key={roomId}
+              data-testid="breakout-room-card"
+              className="border border-gray-700/50 rounded-lg bg-gray-800/30 overflow-hidden"
+            >
+              <div
+                className="w-full px-3 py-2.5 flex items-center justify-between hover:bg-gray-800/40 transition-colors cursor-pointer"
+                onClick={() => toggleRoomExpand(roomId)}
+              >
+                <div className="flex items-center gap-2">
+                  <HealthDot status={health.status} />
+                  <span className="text-sm font-medium text-white">{roomId}</span>
+                  <span data-testid="room-student-count" className="text-[10px] text-gray-500">
+                    {members.length} student{members.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3">
+                  {isTeacher && (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!socket) return;
+                          socket.emit('monitor-room', {
+                            sessionId: roomName,
+                            roomId,
+                            peekMode,
+                            notify: !peekMode,
+                          }, (res: any) => {
+                            if (res?.status === 'ok') {
+                              setIsMonitoring(true);
+                              setMonitorTarget(roomId);
+                              setShowMonitorModal(true);
+                            }
+                          });
+                        }}
+                        data-testid={`monitor-room-${roomId}`}
+                        className="text-[10px] text-engagio-400 hover:text-engagio-300 transition-colors flex items-center gap-0.5"
+                      >
+                        <Eye className="w-3 h-3" /> Monitor
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!socket) return;
+                          socket.emit('join-breakout-room', {
+                            sessionId: roomName,
+                            roomId,
+                          });
+                        }}
+                        data-testid={`join-room-${roomId}`}
+                        className="text-[10px] text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-0.5"
+                      >
+                        <ArrowRight className="w-3 h-3" /> Join
+                      </button>
+                    </>
+                  )}
+                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-gray-500" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-500" />}
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div className="px-3 pb-2.5 space-y-1.5">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-[10px] text-gray-500">Avg: {health.avg}</span>
                   </div>
-                  <div className="p-2 space-y-1">
-                    {members.map((m) => (
-                      <div key={m.identity} className="flex items-center justify-between bg-gray-800/40 rounded px-2 py-1">
+                  {members.map((m) => (
+                    <div key={m.identity} className="flex items-center justify-between">
+                      <div className="flex-1 min-w-0">
                         <StudentAvatar participant={m} scores={engagementScores} />
-                        <button
-                          onClick={() => moveStudent(m.identity, null)}
-                          className="text-gray-500 hover:text-red-400 transition-colors"
-                          title="Move to Main Room"
-                        >
-                          <Minus className="w-3 h-3" />
-                        </button>
                       </div>
-                    ))}
-                    {/* Dropped unassigned can be added here via buttons */}
-                    {unassignedParticipants.length > 0 && (
-                      <div className="pt-1 flex flex-wrap gap-1">
-                        <span className="text-[10px] text-gray-500 mr-1">Assign:</span>
-                        {unassignedParticipants.map((s) => (
-                          <button
-                            key={s.identity}
-                            data-testid={`assign-to-room-${idx}`}
-                            onClick={() => moveStudent(s.identity, roomId)}
-                            className="flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded bg-engagio-600/20 text-engagio-400 hover:bg-engagio-600/40 transition-colors"
-                          >
-                            <Plus className="w-2.5 h-2.5" />
-                            {s.name || s.identity}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          );
+        })}
 
-          {/* Save / Cancel */}
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              onClick={applyManualAssignments}
-              disabled={loading}
-              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-engagio-600/30 hover:bg-engagio-600/50 disabled:opacity-50 border border-engagio-500/30 text-engagio-300 text-xs font-medium transition-colors"
-            >
-              {loading && <Loader className="w-3.5 h-3.5 animate-spin" />}
-              Save Allocations
-            </button>
-            <button
-              onClick={() => setAllocationMode(null)}
-              className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-gray-700/30 hover:bg-gray-700/50 border border-gray-600/30 text-gray-400 text-xs font-medium transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── Auto Shuffle Preview banner ── */}
-      {showingPreview && allocationMode === 'AUTO' && (
-        <div className="px-3 py-1.5 bg-engagio-600/10 border-b border-engagio-500/20">
-          <p className="text-[10px] text-engagio-300">
-            📝 Draft mode — review allocations below, then click Confirm to commit
-          </p>
-        </div>
-      )}
-
-      {/* ── Normal View (auto mode or not editing manual) ── */}
-      {(allocationMode !== 'MANUAL') && (
-        <>
-          <div className="flex-1 overflow-y-auto scrollbar-hide p-2 space-y-2">
-            {Object.keys(groups).length === 0 && (
-              <p className="text-sm text-gray-500 text-center py-6">No participants yet</p>
+        {/* Empty state */}
+        {roomIds.length === 0 && !hasAssignments && (
+          <div className="flex flex-col items-center justify-center py-10 gap-3">
+            <div className="w-12 h-12 rounded-full bg-gray-800 flex items-center justify-center">
+              <LogOut className="w-5 h-5 text-gray-500" />
+            </div>
+            <p className="text-sm text-gray-500 text-center">No breakout rooms yet</p>
+            {isTeacher && (
+              <p className="text-xs text-gray-600 text-center">Click "Create Rooms" to get started</p>
             )}
-            {Object.entries(groups).map(([roomId, members]) => {
-              if (roomId === 'main') {
-              return (
-                <div key="main" data-testid="breakout-room-card" className="border border-gray-700/50 rounded-lg bg-gray-800/30"
-                >
-                  <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30"
-                  >
-                    <span className="text-sm font-medium text-white">Main Room</span>
-                    <span data-testid="room-student-count" className="text-[10px] text-gray-500"
-                    >{members.length} student{members.length !== 1 ? 's' : ''}</span>
-                  </div>
-                    <div className="p-2 space-y-1.5">
-                      {members.map((m) => (
-                        <div key={m.identity} className="flex items-center justify-between">
-                          <div className="flex-1 min-w-0">
-                            <StudentAvatar participant={m} scores={engagementScores} />
-                          </div>
-                          {isTeacher && (
-                            <div className="flex items-center gap-1 ml-1">
-                              <select
-                                data-testid={`change-room-${m.identity}`}
-                                value={mergedAssignments[m.identity] || m.breakoutRoomId || 'main'}
-                                onChange={(e) => changeParticipantRoom(m.identity, e.target.value)}
-                                className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-[9px] text-white focus:outline-none"
-                                title="Change room"
-                              >
-                                <option value="main">Main Room</option>
-                                {Array.from({ length: roomCount }, (_, i) => `room-${String.fromCharCode(97 + i)}`).map((r) => (
-                                  <option key={r} value={r}>{r}</option>
-                                ))}
-                              </select>
-                              <button
-                                onClick={() => unallocateParticipant(m.identity)}
-                                className="text-gray-500 hover:text-red-400 transition-colors p-0.5"
-                                title="Move to Main Room"
-                              >
-                                <Minus className="w-3 h-3" />
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              }
-
-              const health = roomHealth[roomId] || { avg: 0, count: members.length, status: 'red' as const };
-              return (
-                <div
-                  key={roomId}
-                  data-testid="breakout-room-card"
-                  className="border border-gray-700/50 rounded-lg bg-gray-800/30"
-                >
-                  <div className="px-3 py-2 flex items-center justify-between border-b border-gray-700/30">
-                    <div className="flex items-center gap-2">
-                      <HealthDot status={health.status} />
-                      <span className="text-sm font-medium text-white">{roomId}</span>
-                      <span data-testid="room-student-count" className="text-[10px] text-gray-500">{members.length} student{members.length !== 1 ? 's' : ''}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {isTeacher && (
-                        <button
-                          onClick={() => {
-                            if (!socket) return;
-                            const notify = !peekMode;
-                            socket.emit('monitor-room', {
-                              sessionId: roomName,
-                              roomId,
-                              peekMode,
-                              notify,
-                            }, (res: any) => {
-                              if (res?.status === 'ok') {
-                                setIsMonitoring(true);
-                                setMonitorTarget(roomId);
-                                setShowMonitorModal(true);
-                              }
-                            });
-                          }}
-                          data-testid={`monitor-room-${roomId}`}
-                          className="text-[10px] text-engagio-400 hover:text-engagio-300 transition-colors flex items-center gap-0.5"
-                        >
-                          <Eye className="w-3 h-3" /> Monitor
-                        </button>
-                      )}
-                      <span className="text-xs font-semibold text-gray-300">Avg: {health.avg}</span>
-                    </div>
-                  </div>
-                  <div className="p-2 space-y-1.5">
-                    {members.map((m) => (
-                      <div key={m.identity} className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <StudentAvatar participant={m} scores={engagementScores} />
-                        </div>
-                        {isTeacher && (
-                          <div className="flex items-center gap-1 ml-1">
-                            <select
-                              data-testid={`change-room-${m.identity}`}
-                              value={mergedAssignments[m.identity] || m.breakoutRoomId || 'main'}
-                              onChange={(e) => changeParticipantRoom(m.identity, e.target.value)}
-                              className="bg-gray-800 border border-gray-700 rounded px-1 py-0.5 text-[9px] text-white focus:outline-none"
-                              title="Change room"
-                            >
-                              <option value="main">Main Room</option>
-                              {Array.from({ length: roomCount }, (_, i) => `room-${String.fromCharCode(97 + i)}`).map((r) => (
-                                <option key={r} value={r}>{r}</option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => unallocateParticipant(m.identity)}
-                              className="text-gray-500 hover:text-red-400 transition-colors p-0.5"
-                              title="Move to Main Room"
-                            >
-                              <Minus className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
           </div>
-        </>
-      )}
+        )}
+      </div>
 
+      {/* Monitor modal */}
       {showMonitorModal && monitorTarget && (
         <RoomMonitorModal
           roomCode={monitorTarget}
@@ -925,6 +606,17 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
               });
             }
           }}
+        />
+      )}
+
+      {/* Create breakout modal */}
+      {showCreateModal && (
+        <CreateBreakoutModal
+          roomName={roomName}
+          students={modalStudents}
+          currentRoomCount={roomCount}
+          onClose={() => setShowCreateModal(false)}
+          onCreated={handleModalCreated}
         />
       )}
     </div>

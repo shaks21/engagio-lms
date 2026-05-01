@@ -60,73 +60,98 @@ function setRemoteStudents(identities: string[]) {
   }));
 }
 
-/* tiny promise flusher to let useEffect fetches settle */
 const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 // ─────────────────────────────
 //  T E S T S
 // ─────────────────────────────
 
-describe('BreakoutTab — Room Count Dropdown', () => {
+describe('BreakoutTab — Sidebar Room List', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockParticipants = [];
     mockLocal = null;
     localStorage.setItem('engagio_token', 'test-token');
-    globalFetch.mockResolvedValue({ ok: true, json: async () => ({ assignments: {} }) } as Response);
+    globalFetch.mockResolvedValue({ ok: true, json: async () => ({ assignments: {}, groupCount: 2 }) } as Response);
   });
 
-  it('shows a select with up to 25 room options', async () => {
+  it('shows "Create Rooms" button for teachers', async () => {
     await act(async () => {
       render(<BreakoutTab roomName="demo" />);
       await flushPromises();
     });
 
-    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
-    const options = Array.from(select.options);
-    expect(options.length).toBe(25);
-    expect(options[0].textContent).toContain('1 room');
-    expect(options[24].textContent).toContain('25 rooms');
+    expect(screen.getByTestId('create-rooms-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('create-rooms-btn')).toHaveTextContent('Create Rooms');
   });
 
-  it('shows per-room student allocation in each dropdown option', async () => {
-    setRemoteStudents(['s1', 's2', 's3', 's4', 's5', 's6']); // 6 students
+  it('shows room list with Main Room and configured rooms', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        assignments: { s1: 'room-a', s2: 'room-a', s3: 'room-b' },
+        groupCount: 2,
+      }),
+    });
+
+    setRemoteStudents(['s1', 's2', 's3']);
 
     await act(async () => {
       render(<BreakoutTab roomName="demo" />);
       await flushPromises();
     });
 
-    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
-    const options = Array.from(select.options);
-
-    // 1 room → 6 students
-    expect(options[0].textContent).toMatch(/1 room.*6/);
-    // 2 rooms → 3 each
-    expect(options[1].textContent).toMatch(/2 rooms.*3/);
-    // 3 rooms → 2 each
-    expect(options[2].textContent).toMatch(/3 rooms.*2/);
-    // 4 rooms → 1–2 each (uneven split) or 1 each + 2 empty
-    expect(options[3].textContent).toMatch(/4 rooms/);
-    // 7 rooms → 1 each, 1 empty (6 students can't fill 7)
-    expect(options[6].textContent).toMatch(/7 rooms.*empty|7 rooms.*1/);
+    await waitFor(() => {
+      const roomCards = screen.queryAllByTestId('breakout-room-card');
+      expect(roomCards.length).toBeGreaterThanOrEqual(2);
+    });
   });
 
-  it('shows "no students" hint in options when there are zero students', async () => {
+  it('each room card shows student count', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        assignments: { s1: 'room-a', s2: 'room-a', s3: 'room-b' },
+        groupCount: 2,
+      }),
+    });
+
+    setRemoteStudents(['s1', 's2', 's3']);
+
+    await act(async () => {
+      render(<BreakoutTab roomName="demo" socket={createMockSocket()} />);
+      await flushPromises();
+    });
+
+    await waitFor(() => {
+      const counts = screen.queryAllByTestId('room-student-count');
+      expect(counts.length).toBeGreaterThan(0);
+    });
+  });
+
+  it('shows Close All Rooms button when rooms have assignments', async () => {
+    globalFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        assignments: { s1: 'room-a', s2: 'room-b' },
+        groupCount: 2,
+      }),
+    });
+
+    setRemoteStudents(['s1', 's2']);
+
     await act(async () => {
       render(<BreakoutTab roomName="demo" />);
       await flushPromises();
     });
 
-    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
-    const options = Array.from(select.options);
-    // With 0 students, every option should mention "no students" or just room count without per-student info
-    expect(options[0].textContent).toMatch(/1 room/);
-    expect(options[4].textContent).toMatch(/5 room/);
+    await waitFor(() => {
+      expect(screen.getByTestId('close-all-rooms-btn')).toBeInTheDocument();
+    });
   });
 });
 
-describe('BreakoutTab — Auto Shuffle', () => {
+describe('BreakoutTab — Modal Integration (Auto Shuffle)', () => {
   const user = userEvent.setup();
 
   beforeEach(() => {
@@ -135,21 +160,11 @@ describe('BreakoutTab — Auto Shuffle', () => {
     mockLocal = null;
     localStorage.setItem('engagio_token', 'test-token');
     globalFetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ assignments: {} }) }) // GET breakouts on mount
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          assignments: {
-            s1: 'room-a',
-            s2: 'room-b',
-            s3: 'room-a',
-            s4: 'room-b',
-          },
-        }),
-      }); // POST preview
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ assignments: {}, groupCount: 2 }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ assignments: { s1: 'room-a', s2: 'room-b', s3: 'room-a', s4: 'room-b' } }) });
   });
 
-  it('clicking Auto Shuffle enters preview mode with draft banner', async () => {
+  it('opening modal and clicking Create triggers auto-shuffle and shows rooms', async () => {
     setRemoteStudents(['s1', 's2', 's3', 's4']);
 
     await act(async () => {
@@ -157,39 +172,28 @@ describe('BreakoutTab — Auto Shuffle', () => {
       await flushPromises();
     });
 
-    const shuffleBtn = screen.getByTestId('auto-shuffle-btn');
-    await user.click(shuffleBtn);
+    // Open modal
+    await user.click(screen.getByTestId('create-rooms-btn'));
 
     await waitFor(() => {
-      expect(screen.getByText(/Draft mode/i)).toBeInTheDocument();
-    });
-  });
-
-  it('choosing room count updates shuffle request payload', async () => {
-    setRemoteStudents(['s1', 's2', 's3', 's4', 's5']);
-
-    await act(async () => {
-      render(<BreakoutTab roomName="demo" />);
-      await flushPromises();
+      expect(screen.getByTestId('create-breakout-modal')).toBeInTheDocument();
     });
 
-    // select 3 rooms
-    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
-    await user.selectOptions(select, '3');
+    // Auto mode is default — click Create
+    await user.click(screen.getByTestId('modal-create-btn'));
 
-    const shuffleBtn = screen.getByTestId('auto-shuffle-btn');
-    await user.click(shuffleBtn);
+    // Modal should close, rooms should appear
+    await waitFor(() => {
+      expect(screen.queryByTestId('create-breakout-modal')).not.toBeInTheDocument();
+    });
 
     await waitFor(() => {
-      const calls = (globalFetch as any).mock.calls;
-      const previewCall = calls.find((c: any) => String(c[0]).includes('/preview'));
-      expect(previewCall).toBeTruthy();
-      expect(JSON.parse(previewCall[1].body)).toMatchObject({ groupCount: 3 });
+      expect(screen.queryAllByTestId('breakout-room-card').length).toBeGreaterThanOrEqual(2);
     });
   });
 });
 
-describe('BreakoutTab — Manual Allocation', () => {
+describe('BreakoutTab — Modal Integration (Manual Allocation)', () => {
   const user = userEvent.setup();
 
   beforeEach(() => {
@@ -197,10 +201,10 @@ describe('BreakoutTab — Manual Allocation', () => {
     mockParticipants = [];
     mockLocal = null;
     localStorage.setItem('engagio_token', 'test-token');
-    globalFetch.mockResolvedValue({ ok: true, json: async () => ({ assignments: {} }) } as Response);
+    globalFetch.mockResolvedValue({ ok: true, json: async () => ({ assignments: {}, groupCount: 2 }) } as Response);
   });
 
-  it('clicking Manual Allocation shows unassigned pool and room columns', async () => {
+  it('opening modal, selecting manual mode, and assigning students works', async () => {
     setRemoteStudents(['s1', 's2', 's3', 's4']);
 
     await act(async () => {
@@ -208,89 +212,34 @@ describe('BreakoutTab — Manual Allocation', () => {
       await flushPromises();
     });
 
-    const manualBtn = screen.getByRole('button', { name: /Manual Allocation/i });
-    await user.click(manualBtn);
+    // Open modal
+    await user.click(screen.getByTestId('create-rooms-btn'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('unassigned-pool')).toBeInTheDocument();
+      expect(screen.getByTestId('create-breakout-modal')).toBeInTheDocument();
     });
 
-    const roomCards = screen.queryAllByTestId('breakout-room-card');
-    expect(roomCards.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it('clicking Assign button in Manual Allocation moves student and updates pool count', async () => {
-    setRemoteStudents(['s1', 's2', 's3']);
-
-    await act(async () => {
-      render(<BreakoutTab roomName="demo" />);
-      await flushPromises();
-    });
-
-    const manualBtn = screen.getByRole('button', { name: /Manual Allocation/i });
-    await user.click(manualBtn);
+    // Select manual mode
+    await user.click(screen.getByTestId('mode-manual'));
 
     await waitFor(() => {
-      expect(screen.getByTestId('unassigned-pool')).toBeInTheDocument();
+      expect(screen.getByTestId('manual-unassigned-pool')).toBeInTheDocument();
     });
 
-    // Ensure the unassigned pool shows at least one student before clicking
-    const poolBefore = screen.getByTestId('unassigned-pool');
-    expect(poolBefore.textContent).toContain('Student s1');
-
-    const assignBtns = screen.queryAllByTestId(/^assign-to-room-/);
+    // Assign first student to first room
+    const assignBtns = screen.queryAllByTestId(/^manual-assign-btn-/);
     expect(assignBtns.length).toBeGreaterThan(0);
 
-    // Click the first assign button (should move Student s1 to room-a)
     await user.click(assignBtns[0]);
 
-    // After re-render the unassigned pool should show fewer students
-    // (teacher + remaining unassigned). We assert by count badge changing
-    // instead of strict name matching to avoid flaky textContent checks.
+    // Pool count should decrease
     await waitFor(() => {
-      const pool = screen.getByTestId('unassigned-pool');
-      // Pool count badge should show fewer than before (was 4 incl. teacher)
+      const pool = screen.getByTestId('manual-unassigned-pool');
       expect(pool.textContent).not.toMatch(/4 students/);
     });
   });
 });
 
-/* ─────────────────────────────
-  Issue 1: Capacity hint accuracy
-  ───────────────────────────── */
-describe('BreakoutTab — Capacity Hint with 1 student / 3 rooms', () => {
-  const user = userEvent.setup();
-
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mockParticipants = [];
-    mockLocal = null;
-    localStorage.setItem('engagio_token', 'test-token');
-    globalFetch.mockResolvedValue({ ok: true, json: async () => ({ assignments: {} }) } as Response);
-  });
-
-  it('shows accurate distribution with single student across 3 rooms', async () => {
-    setRemoteStudents(['s1']);
-
-    await act(async () => {
-      render(<BreakoutTab roomName="demo" />);
-      await flushPromises();
-    });
-
-    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
-    await user.selectOptions(select, '3');
-
-    const hint = screen.getByTestId('room-capacity-hint');
-    // Should NOT show "~1 students per room" which implies all rooms get 1
-    expect(hint.textContent).not.toMatch(/~1 student(?:s)? per room/);
-    // Should show that 1 room is populated and some rooms will be empty
-    expect(hint.textContent).toMatch(/1 in 1 room/i);
-  });
-});
-
-/* ─────────────────────────────
-  Issue 2: Broadcast audio state + colour
-  ───────────────────────────── */
 describe('BreakoutTab — Broadcast Audio', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -310,24 +259,21 @@ describe('BreakoutTab — Broadcast Audio', () => {
 
     const btn = screen.getByTestId('broadcast-audio-btn');
     expect(btn).toHaveTextContent(/Broadcast Audio/i);
-    // Before clicking: should be green-themed (start-broadcast state)
     expect(btn.className).toMatch(/bg-engagio/);
 
-    // Simulate starting broadcast
+    // Simulate broadcast started
     await act(async () => {
       mockSocket.on.mock.calls
         .filter((c: any) => c[0] === 'broadcast-state-changed')
         .forEach((c: any) => c[1]({ isBroadcasting: true }));
     });
 
-    // After broadcast starts: button should still be green-themed
-    // because green = "broadcasting / LIVE"
     const btnAfter = screen.getByTestId('broadcast-audio-btn');
     expect(btnAfter.textContent).toMatch(/Stop Broadcast/i);
     expect(btnAfter.className).toMatch(/bg-green-600|bg-engagio-600|text-green/i);
   });
 
-  it('shows a live broadcast badge when teacher is broadcasting', async () => {
+  it('does not show live broadcast badge initially', async () => {
     const mockSocket = createMockSocket();
 
     await act(async () => {
@@ -335,8 +281,7 @@ describe('BreakoutTab — Broadcast Audio', () => {
       await flushPromises();
     });
 
-    // The badge should NOT be visible initially
-    const badgeBefore = screen.queryByTestId('live-broadcast-indicator');
-    expect(badgeBefore).toBeNull();
+    const badge = screen.queryByTestId('live-broadcast-indicator');
+    expect(badge).toBeNull();
   });
 });
