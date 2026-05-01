@@ -10,6 +10,7 @@ enum Role {
   ADMIN
   TEACHER
   STUDENT
+  GUEST
 }
 
 enum EventType {
