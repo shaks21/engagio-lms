@@ -38,8 +38,20 @@ export class BreakoutController {
       sessionId,
       req.user.id,
       body.assignments,
-      body.grantPermissions !== false, // default true
+      body.grantPermissions !== false,
     );
+
+    // Persist assignmentMode + groupCount if provided
+    if (body.assignmentMode || body.groupCount !== undefined) {
+      await this.breakoutService.setMode(
+        req.tenantId,
+        sessionId,
+        req.user.id,
+        body.assignmentMode ?? 'AUTO',
+        body.groupCount,
+      );
+    }
+
     return { success: true, assignments };
   }
 

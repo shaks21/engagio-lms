@@ -15,7 +15,17 @@ export class BreakoutPatchBody {
   @IsOptional()
   @IsBoolean()
   grantPermissions?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  groupCount?: number;
+
+  @IsOptional()
+  @IsEnum(['AUTO', 'MANUAL', 'SELF_SELECT'] as const)
+  assignmentMode?: 'AUTO' | 'MANUAL' | 'SELF_SELECT';
 }
+
+
 
 export class BreakoutAutoBody {
   @IsNumber()

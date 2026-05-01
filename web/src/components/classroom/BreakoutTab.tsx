@@ -312,6 +312,13 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
     setAssignments(newAssignments);
     setRoomCount(newRoomCount);
     setShowCreateModal(false);
+    // Expand all rooms so user sees what's there
+    const allRooms = new Set<string>();
+    allRooms.add('main');
+    for (let i = 0; i < newRoomCount; i++) {
+      allRooms.add(`room-${String.fromCharCode(97 + i)}`);
+    }
+    setExpandedRooms(allRooms);
     onToast?.({
       id: Date.now().toString(),
       message: mode === 'AUTO'
@@ -614,6 +621,7 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
         <CreateBreakoutModal
           roomName={roomName}
           students={modalStudents}
+          hostIdentity={(participants.find((p) => p.isLocal) || { identity: undefined }).identity}
           currentRoomCount={roomCount}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleModalCreated}

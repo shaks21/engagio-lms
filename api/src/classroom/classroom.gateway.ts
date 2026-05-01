@@ -1085,6 +1085,35 @@ export class ClassroomGateway implements OnGatewayConnection, OnGatewayDisconnec
     return { status: "ok", monitorTarget: state?.target || null, peekMode: state?.peekMode ?? true, notify: state?.notify ?? true };
   }
 
+  /* ──────── Join Breakout Room ──────── */
+  @SubscribeMessage("join-breakout-room")
+  async handleJoinBreakoutRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { sessionId: string; roomId: string },
+  ) {
+    const { sessionId, roomId } = data;
+    const senderUserId = client.data.userId as string | undefined;
+    this.logger.log(`[JOIN-BREAKOUT] session=${sessionId}, room=${roomId}, user=${senderUserId}`);
+
+    if (!sessionId || !roomId) {
+      return { status: "error", message: "Missing sessionId or roomId" };
+    }
+
+    // Persist the breakout room assignment via metadata
+    // In a production setup this would call BreakoutService.assignBreakouts;
+    // here we emit the assignment back to all clients in the session
+    // and rely on clients to update their local metadata.
+    this.server.to(`session::${sessionId}`).emit("breakout-assignments", {
+      action: "JOIN",
+      sessionId,
+      roomId,
+      userId: senderUserId,
+      timestamp: new Date().toISOString(),
+    });
+
+    return { status: "ok", roomId };
+  }
+
   /* ──────── Host Transfer ──────── */
   /* ──────── Host Transfer ──────── */
   @SubscribeMessage("transfer-host")

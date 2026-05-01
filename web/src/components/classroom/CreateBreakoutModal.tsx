@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { X, Minus, Plus, Bot, Hand, Users, Check, Loader } from 'lucide-react';
+import { X, Minus, Plus, Bot, Hand, Users, Check, Loader, LogIn } from 'lucide-react';
 
 /* ─── types ─── */
 interface Student {
@@ -16,6 +16,7 @@ const MAX_ROOMS = 25;
 interface CreateBreakoutModalProps {
   roomName: string;
   students: Student[];
+  hostIdentity?: string;
   currentRoomCount: number;
   onClose: () => void;
   onCreated: (assignments: Record<string, string>, groupCount: number, mode: AllocationMode) => void;
@@ -53,6 +54,7 @@ function shuffleArray<T>(arr: T[]): T[] {
 function generateAutoAssignments(
   students: Student[],
   roomCount: number,
+  hostIdentity?: string,
 ): Record<string, string> {
   const assignments: Record<string, string> = {};
   const shuffled = shuffleArray(students);
@@ -60,6 +62,10 @@ function generateAutoAssignments(
     const roomIdx = idx % roomCount;
     assignments[s.identity] = `room-${String.fromCharCode(97 + roomIdx)}`;
   });
+  // Host stays in main room
+  if (hostIdentity) {
+    assignments[hostIdentity] = 'main';
+  }
   return assignments;
 }
 
@@ -104,15 +110,39 @@ function ModeCard({
   );
 }
 
+/* ─── Self-select room card ─── */
+function SelfSelectRoomCard({
+  roomId,
+  studentCount,
+}: {
+  roomId: string;
+  studentCount: number;
+}) {
+  return (
+    <div
+      data-testid="self-select-room-card"
+      className="flex flex-col items-center text-center p-4 rounded-xl border border-gray-700 bg-gray-800/30 hover:bg-gray-800/50 transition-colors"
+    >
+      <div className="w-10 h-10 rounded-full bg-gray-700 flex items-center justify-center text-sm font-bold text-gray-300 mb-2">
+        {roomId.split('-')[1]?.toUpperCase() ?? roomId}
+      </div>
+      <span className="text-sm font-semibold text-white mb-1">{roomId}</span>
+      <span className="text-xs text-gray-500">{studentCount} of 0 student{studentCount !== 1 ? 's' : ''}</span>
+    </div>
+  );
+}
+
 /* ─── Student chip ─── */
 function StudentChip({
   student,
   onAssign,
   roomId,
+  showAssign = true,
 }: {
   student: Student;
   onAssign?: (identity: string, roomId: string) => void;
   roomId?: string;
+  showAssign?: boolean;
 }) {
   const initials = student.name
     .split(' ')
@@ -127,7 +157,7 @@ function StudentChip({
         {initials}
       </div>
       <span className="text-xs text-gray-300 truncate max-w-[6rem]">{student.name}</span>
-      {onAssign && roomId && (
+      {showAssign && onAssign && roomId && (
         <button
           data-testid={`manual-assign-btn-${student.identity}`}
           onClick={() => onAssign(student.identity, roomId)}
@@ -145,6 +175,7 @@ function StudentChip({
 export default function CreateBreakoutModal({
   roomName,
   students,
+  hostIdentity,
   currentRoomCount,
   onClose,
   onCreated,
@@ -158,7 +189,10 @@ export default function CreateBreakoutModal({
 
   /* derived manual state */
   const unassignedStudents = useMemo(() => {
-    return students.filter((s) => !manualAssignments[s.identity] || manualAssignments[s.identity] === 'main');
+    return students.filter((s) => {
+      const assigned = manualAssignments[s.identity];
+      return !assigned || assigned === 'main';
+    });
   }, [students, manualAssignments]);
 
   const roomMembers = useMemo(() => {
@@ -195,13 +229,16 @@ export default function CreateBreakoutModal({
       let assignments: Record<string, string> = {};
 
       if (mode === 'AUTO') {
-        assignments = generateAutoAssignments(students, roomCount);
+        assignments = generateAutoAssignments(students, roomCount, hostIdentity);
       } else if (mode === 'MANUAL') {
         assignments = { ...manualAssignments };
         // Any unassigned stay in main
         students.forEach((s) => {
           if (!assignments[s.identity]) assignments[s.identity] = 'main';
         });
+        if (hostIdentity) {
+          assignments[hostIdentity] = 'main';
+        }
       } else if (mode === 'SELF_SELECT') {
         // Empty assignments — students pick themselves
         assignments = {};
@@ -210,7 +247,7 @@ export default function CreateBreakoutModal({
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
-        body: JSON.stringify({ assignments, groupCount: roomCount }),
+        body: JSON.stringify({ assignments, groupCount: roomCount, assignmentMode: mode, grantPermissions: true }),
       });
 
       if (!res.ok) {
@@ -221,13 +258,20 @@ export default function CreateBreakoutModal({
       onCreated(assignments, roomCount, mode);
     } catch (e: any) {
       console.error('[CreateBreakoutModal] Error:', e);
-      // Still call onCreated so UI updates (assignments are local anyway)
-      // But show error via toast would need parent
-      onCreated(mode === 'AUTO' ? generateAutoAssignments(students, roomCount) : manualAssignments, roomCount, mode);
+      // Still call onCreated so UI updates
+      let fallbackAssignments: Record<string, string> = {};
+      if (mode === 'AUTO') {
+        fallbackAssignments = generateAutoAssignments(students, roomCount, hostIdentity);
+      } else if (mode === 'MANUAL') {
+        fallbackAssignments = { ...manualAssignments };
+        students.forEach((s) => { if (!fallbackAssignments[s.identity]) fallbackAssignments[s.identity] = 'main'; });
+        if (hostIdentity) fallbackAssignments[hostIdentity] = 'main';
+      }
+      onCreated(fallbackAssignments, roomCount, mode);
     } finally {
       setLoading(false);
     }
-  }, [roomName, students, roomCount, mode, manualAssignments, onCreated]);
+  }, [roomName, students, roomCount, mode, manualAssignments, hostIdentity, onCreated]);
 
   return (
     <div
@@ -379,6 +423,24 @@ export default function CreateBreakoutModal({
                       </div>
                     )}
                   </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Self-select panel */}
+          {mode === 'SELF_SELECT' && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-400">
+                Students will see these rooms and can pick one to join.
+              </p>
+              <div className="grid grid-cols-3 gap-3">
+                {Array.from({ length: roomCount }, (_, i) => `room-${String.fromCharCode(97 + i)}`).map((roomId) => (
+                  <SelfSelectRoomCard
+                    key={roomId}
+                    roomId={roomId}
+                    studentCount={0}
+                  />
                 ))}
               </div>
             </div>
