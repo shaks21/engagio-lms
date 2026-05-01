@@ -727,7 +727,10 @@ function InnerRoomUI({
       </div>
       {/* Student Global Announcement banner when broadcast is active */}
       {!isTeacher && isBroadcasting && (
-        <div className="sticky top-14 z-40 bg-engagio-600/20 border-b border-engagio-500/30 px-4 py-1.5 text-center">
+        <div
+          data-testid="live-broadcast-indicator"
+          className="sticky top-14 z-40 bg-engagio-600/20 border-b border-engagio-500/30 px-4 py-1.5 text-center"
+        >
           <p className="text-xs font-medium text-engagio-300">
             🔊 Global Announcement — Your teacher is broadcasting audio to all rooms
           </p>
