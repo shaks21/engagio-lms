@@ -20,7 +20,6 @@ import {
   Pin,
   Hand,
   Layers,
-  Megaphone,
 } from 'lucide-react';
 import type { Participant } from 'livekit-client';
 import { Track } from 'livekit-client';
@@ -334,7 +333,8 @@ function QAPanel({
   );
 }
 
-function TabButton({
+/* ─── Icon rail button ─── */
+function IconRailButton({
   id,
   label,
   icon: Icon,
@@ -351,21 +351,47 @@ function TabButton({
 }) {
   return (
     <button
-      data-testid={`sidebar-tab-${id}`}
+      data-testid={`rail-btn-${id}`}
       onClick={onClick}
-      className={`flex-1 py-3 text-xs font-medium flex items-center justify-center gap-1.5 transition-colors ${
-        active ? 'text-engagio-400 border-b-2 border-engagio-500' : 'text-gray-400 hover:text-white'
+      className={`w-full flex flex-col items-center justify-center gap-1 py-3 px-1 transition-colors ${
+        active ? '' : 'hover:bg-gray-800/50'
       }`}
       aria-label={label}
+      title={label}
     >
-      <Icon className="w-4 h-4" />
-      {label}
-      {badge && badge > 0 && (
-        <span className="bg-engagio-600 text-white text-[10px] px-1.5 py-0.5 rounded-full">{badge > 9 ? '9+' : badge}</span>
-      )}
+      <div
+        className={`relative w-10 h-10 rounded-xl flex items-center justify-center transition-all ${
+          active
+            ? 'bg-blue-600 text-white shadow-md shadow-blue-900/30'
+            : 'text-gray-400'
+        }`}
+      >
+        <Icon className="w-5 h-5" />
+        {badge && badge > 0 && (
+          <span className="absolute -top-1 -right-1 bg-engagio-600 text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+            {badge > 9 ? '9+' : badge}
+          </span>
+        )}
+      </div>
+      <span
+        className={`text-[10px] font-medium leading-none mt-0.5 ${
+          active ? 'text-gray-300' : 'text-gray-500'
+        }`}
+      >
+        {label}
+      </span>
     </button>
   );
 }
+
+const TAB_CONFIG: { id: SidebarTab; label: string; icon: React.ElementType; teacherOnly?: boolean }[] = [
+  { id: 'chat', label: 'Chat', icon: MessageSquare },
+  { id: 'participants', label: 'People', icon: Users },
+  { id: 'qa', label: 'Q&A', icon: HelpCircle },
+  { id: 'poll', label: 'Polls', icon: BarChart3 },
+  { id: 'quiz', label: 'Quizzes', icon: BrainCircuit },
+  { id: 'breakout', label: 'Rooms', icon: Layers },
+];
 
 export default function Sidebar({
   open,
@@ -405,142 +431,125 @@ export default function Sidebar({
       )}
       <aside
         data-testid="classroom-sidebar"
-        className={`sidebar-panel bg-edu-slate border-l border-gray-800 flex flex-col overflow-hidden transition-[width] duration-300 ${
-          open ? 'w-72 sm:w-80' : 'w-0'
+        className={`sidebar-panel bg-edu-slate border-l border-gray-800 flex overflow-hidden transition-[width] duration-300 ${
+          open ? 'w-auto' : 'w-0'
         }`}
         aria-label="Chat and participants panel"
       >
-        <div className="w-72 sm:w-80 h-full flex flex-col">
-          {/* Tabs */}
-          <div className="flex border-b border-gray-800">
-            <TabButton
-              id="chat"
-              label="Chat"
-              icon={MessageSquare}
-              active={tab === 'chat'}
-              onClick={() => { onTabChange('chat'); onResetChatCount?.(); }}
-              badge={tab !== 'chat' ? (unreadChatCount > 0 ? unreadChatCount : undefined) : undefined}
-            />
-            <TabButton
-              id="participants"
-              label="People"
-              icon={Users}
-              active={tab === 'participants'}
-              onClick={() => onTabChange('participants')}
-            />
-            <TabButton
-              id="qa"
-              label="Q&A"
-              icon={HelpCircle}
-              active={tab === 'qa'}
-              onClick={() => onTabChange('qa')}
-            />
-            <TabButton
-              id="poll"
-              label="Polls"
-              icon={BarChart3}
-              active={tab === 'poll'}
-              onClick={() => onTabChange('poll')}
-              badge={pollCount > 0 ? pollCount : undefined}
-            />
-            {isTeacher && (
-              <TabButton
-                id="breakout"
-                label="Breakout"
-                icon={Layers}
-                active={tab === 'breakout'}
-                onClick={() => onTabChange('breakout')}
+        <div className="flex h-full">
+          {/* ── Left icon rail ── */}
+          <div
+            data-testid="sidebar-icon-rail"
+            className="w-16 sm:w-[72px] flex-shrink-0 flex flex-col border-r border-gray-800 bg-[#121218] py-2 overflow-y-auto"
+          >
+            {TAB_CONFIG.filter(
+              (t) => !t.teacherOnly || isTeacher
+            ).map((t) => (
+              <IconRailButton
+                key={t.id}
+                id={t.id}
+                label={t.label}
+                icon={t.icon}
+                active={tab === t.id}
+                onClick={() => {
+                  onTabChange(t.id);
+                  if (t.id === 'chat') onResetChatCount?.();
+                }}
+                badge={
+                  t.id === 'chat' && tab !== 'chat'
+                    ? unreadChatCount > 0
+                      ? unreadChatCount
+                      : undefined
+                    : t.id === 'poll'
+                    ? pollCount > 0
+                      ? pollCount
+                      : undefined
+                    : undefined
+                }
               />
-            )}
-            <TabButton
-              id="quiz"
-              label="Quiz"
-              icon={BrainCircuit}
-              active={tab === 'quiz'}
-              onClick={() => onTabChange('quiz')}
-            />
-            <TabButton
-              id="broadcast"
-              label="Broadcast"
-              icon={Megaphone}
-              active={tab === 'broadcast'}
-              onClick={() => { onTabChange('broadcast'); onResetChatCount?.(); }}
-            />
-
-            <button
-              onClick={onClose}
-              className="px-3 text-gray-400 hover:text-white transition-colors"
-              aria-label="Close sidebar"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            ))}
           </div>
 
-          {/* Panels */}
-          <div className="flex-1 overflow-hidden">
-            {tab === 'chat' && (
-              <div className="h-full">
-                <Chat
-                  userId={userId || ''}
-                  userName={userName || 'Anonymous'}
-                  socket={socket}
-                  sessionId={sessionId}
-                  messages={chatMessages}
-                  onAddMessage={onAddChatMessage}
-                  breakoutRoomId={breakoutRoomId || 'main'}
-                  roomTitle={isTeacher ? 'All Rooms' : undefined}
-                  isTeacher={isTeacher}
-                  availableRooms={availableRooms || [breakoutRoomId || 'main']}
-                />
-              </div>
-            )}
-            {tab === 'broadcast' && (
-              <div className="h-full">
-                <Chat
-                  userId={userId || ''}
-                  userName={userName || 'Anonymous'}
-                  socket={socket}
-                  sessionId={sessionId}
-                  messages={chatMessages}
-                  onAddMessage={onAddChatMessage}
-                  isBroadcastChat={true}
-                  isTeacher={isTeacher}
-                  roomTitle="Broadcast to All Rooms"
-                  readOnly={!isTeacher}
-                />
-              </div>
-            )}
+          {/* ── Right content panel ── */}
+          <div className="w-64 sm:w-72 h-full flex flex-col">
+            {/* Header */}
+            <div
+              data-testid="sidebar-content-header"
+              className="flex items-center justify-between px-3 py-2.5 border-b border-gray-800 bg-[#151520]"
+            >
+              <span className="text-sm font-semibold text-white">
+                {TAB_CONFIG.find((t) => t.id === tab)?.label || tab}
+              </span>
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-white transition-colors p-1 rounded-md hover:bg-gray-800"
+                aria-label="Close sidebar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
 
-            {tab === 'participants' && (
-              <ParticipantsPanel
+            {/* Panels */}
+            <div className="flex-1 overflow-hidden">
+              {tab === 'chat' && (
+                <div className="h-full">
+                  <Chat
+                    userId={userId || ''}
+                    userName={userName || 'Anonymous'}
+                    socket={socket}
+                    sessionId={sessionId}
+                    messages={chatMessages}
+                    onAddMessage={onAddChatMessage}
+                    breakoutRoomId={breakoutRoomId || 'main'}
+                    roomTitle={isTeacher ? 'All Rooms' : undefined}
+                    isTeacher={isTeacher}
+                    availableRooms={availableRooms || [breakoutRoomId || 'main']}
+                  />
+                </div>
+              )}
+              {tab === 'broadcast' && (
+                <div className="h-full">
+                  <Chat
+                    userId={userId || ''}
+                    userName={userName || 'Anonymous'}
+                    socket={socket}
+                    sessionId={sessionId}
+                    messages={chatMessages}
+                    onAddMessage={onAddChatMessage}
+                    isBroadcastChat={true}
+                    isTeacher={isTeacher}
+                    roomTitle="Broadcast to All Rooms"
+                    readOnly={!isTeacher}
+                  />
+                </div>
+              )}
+              {tab === 'participants' && (
+                <ParticipantsPanel
+                  userId={userId}
+                  pinnedSid={pinnedParticipantSid}
+                  onPinParticipant={onPinParticipant}
+                  raisedHands={raisedHands}
+                />
+              )}
+              {tab === 'qa' && <QAPanel socket={socket} sessionId={sessionId} userId={userId} userName={userName} />}
+              {tab === 'poll' && <Poll
+                polls={polls || []}
                 userId={userId}
-                pinnedSid={pinnedParticipantSid}
-                onPinParticipant={onPinParticipant}
-                raisedHands={raisedHands}
-              />
-            )}
-
-            {tab === 'qa' && <QAPanel socket={socket} sessionId={sessionId} userId={userId} userName={userName} />}
-
-            {tab === 'poll' && <Poll
-              polls={polls || []}
-              userId={userId}
-              isTeacher={isTeacher || false}
-              onCreatePoll={onCreatePoll || (() => {})}
-              onVote={onVotePoll || (() => {})}
-            />}
-
-            {tab === 'quiz' && (
-              <div className="h-full">
-                <QuizPanel sessionId={sessionId} socket={socket} isTeacher={!!isTeacher} />
-              </div>
-            )}
-
-            {tab === 'breakout' && isTeacher && (
-              <div className="h-full">
-                <BreakoutTab roomName={sessionId} socket={socket} onToast={onToast} />
-              </div>
-            )}
+                isTeacher={isTeacher || false}
+                onCreatePoll={onCreatePoll || (() => {})}
+                onVote={onVotePoll || (() => {})}
+              />}
+              {tab === 'quiz' && (
+                <div className="h-full">
+                  <QuizPanel sessionId={sessionId} socket={socket} isTeacher={!!isTeacher} />
+                </div>
+              )}
+              {tab === 'breakout' && isTeacher && (
+                <div className="h-full">
+                  <BreakoutTab roomName={sessionId} socket={socket} onToast={onToast} />
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </aside>
