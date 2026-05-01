@@ -93,11 +93,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTokenVersion(v => v + 1); // Trigger re-auth
   }, [API]);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(TOKEN_KEY);
-    setUser(null);
-    setTokenVersion(v => v + 1); // Reset auth state
-  }, []);
+  const logout = useCallback(async () => {
+    try {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (token) {
+        // Call backend to blacklist token
+        await axios.post(
+          `${API}/auth/logout`,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+      }
+    } catch (error) {
+      // Even if backend call fails, always clear local state
+      console.warn('Logout API call failed, clearing local state', error);
+    } finally {
+      localStorage.removeItem(TOKEN_KEY);
+      setUser(null);
+      setTokenVersion(v => v + 1); // Reset auth state
+      // Navigate to login
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+  }, [API]);
 
   const isAuthenticated = user !== null;
   const userId = user?.id ?? null;

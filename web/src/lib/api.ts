@@ -28,7 +28,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
         localStorage.removeItem('engagio_token');
-        window.location.href = '/login';
+        // Only redirect if not already on login page
+        if (!window.location.pathname.startsWith('/login')) {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
@@ -36,6 +39,12 @@ api.interceptors.response.use(
 );
 
 export default api;
+
+// === Auth ===
+export async function logout(): Promise<{ message: string }> {
+  const { data } = await api.post<{ message: string }>('/auth/logout');
+  return data;
+}
 
 // === Courses ===
 export interface Course {

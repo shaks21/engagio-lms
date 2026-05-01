@@ -76,12 +76,71 @@ const navItems: NavItem[] = [
   },
 ];
 
+import { useAuth } from '@/lib/auth-context';
+import { LogOut, ChevronDown } from 'lucide-react';
+
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const pathname = usePathname();
+  const { user, logout, isAuthenticated } = useAuth();
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  const handleLogoutClick = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const handleConfirmLogout = () => {
+    setShowLogoutConfirm(false);
+    logout();
+  };
+
+  const handleCancelLogout = () => {
+    setShowLogoutConfirm(false);
+  };
+
+  const userInitials = user?.email
+    ? user.email
+        .split('@')[0]
+        .split(/[._-]/)
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    : 'U';
 
   return (
     <>
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && !collapsed && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
+                <LogOut className="w-5 h-5 text-red-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-white">Log Out</h3>
+            </div>
+            <p className="text-gray-400 text-sm mb-6">
+              Are you sure you want to log out? This will end your current session and require you to sign in again.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={handleCancelLogout}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-300 hover:text-white hover:bg-gray-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmLogout}
+                className="px-4 py-2 rounded-lg text-sm font-medium bg-red-600 hover:bg-red-700 text-white transition-colors"
+              >
+                Log Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <aside
         className={`sticky top-0 h-screen bg-gray-900 text-white transition-all duration-200 ease-in-out flex flex-col shrink-0 ${
           collapsed ? 'w-16' : 'w-56'
@@ -137,6 +196,30 @@ export default function Sidebar() {
             })}
           </ul>
         </nav>
+
+        {/* User Section */}
+        {isAuthenticated && (
+          <div className="border-t border-gray-700 px-3 py-3 shrink-0">
+            <button
+              onClick={handleLogoutClick}
+              className={`flex items-center gap-3 w-full px-3 py-2 rounded-lg transition-colors text-sm text-gray-300 hover:bg-gray-800 hover:text-white ${
+                collapsed ? 'justify-center' : ''
+              }`}
+              title="Log out"
+            >
+              <div className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-full bg-engagio-600/20 text-engagio-400 text-xs font-bold ${collapsed ? '' : ''}`}>
+                {userInitials}
+              </div>
+              {!collapsed && (
+                <div className="flex-1 min-w-0 text-left">
+                  <p className="text-sm font-medium text-white truncate">{user?.email || 'User'}</p>
+                  <p className="text-[11px] text-gray-500 uppercase tracking-wider">{user?.role || 'USER'}</p>
+                </div>
+              )}
+              {!collapsed && <LogOut className="w-4 h-4 text-gray-400 shrink-0" />}
+            </button>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="border-t border-gray-700 px-4 py-3 text-xs text-gray-400 shrink-0">
