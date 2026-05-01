@@ -217,17 +217,23 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
   React.useEffect(() => {
     const token = localStorage.getItem('engagio_token');
     if (!token || !roomName) return;
+    let cancelled = false;
     fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.json())
       .then((data) => {
-        if (data.assignments) setAssignments(data.assignments);
+        if (cancelled) return;
+        // Only overwrite if server has persisted assignments (avoid race with user interaction)
+        if (data.assignments && Object.keys(data.assignments).length > 0) {
+          setAssignments(data.assignments);
+        }
         if (data.groupCount && data.groupCount >= 1 && data.groupCount <= MAX_ROOMS) {
           setRoomCount(data.groupCount);
         }
       })
       .catch(() => {});
+    return () => { cancelled = true; };
   }, [roomName]);
 
   /* socket broadcast state sync */
@@ -623,6 +629,7 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
           students={modalStudents}
           hostIdentity={(participants.find((p) => p.isLocal) || { identity: undefined }).identity}
           currentRoomCount={roomCount}
+          existingAssignments={assignments}
           onClose={() => setShowCreateModal(false)}
           onCreated={handleModalCreated}
         />

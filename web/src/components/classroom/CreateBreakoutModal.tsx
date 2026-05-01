@@ -18,6 +18,7 @@ interface CreateBreakoutModalProps {
   students: Student[];
   hostIdentity?: string;
   currentRoomCount: number;
+  existingAssignments?: Record<string, string>;
   onClose: () => void;
   onCreated: (assignments: Record<string, string>, groupCount: number, mode: AllocationMode) => void;
 }
@@ -177,12 +178,21 @@ export default function CreateBreakoutModal({
   students,
   hostIdentity,
   currentRoomCount,
+  existingAssignments,
   onClose,
   onCreated,
 }: CreateBreakoutModalProps) {
   const [roomCount, setRoomCount] = useState(currentRoomCount);
   const [mode, setMode] = useState<AllocationMode>('AUTO');
-  const [manualAssignments, setManualAssignments] = useState<Record<string, string>>({});
+  const [manualAssignments, setManualAssignments] = useState<Record<string, string>>(() => {
+    // Pre-seed manualAssignments from existing assignments so reconfiguration works
+    if (!existingAssignments) return {};
+    const seeded: Record<string, string> = {};
+    for (const [identity, roomId] of Object.entries(existingAssignments)) {
+      if (roomId && roomId !== 'main') seeded[identity] = roomId;
+    }
+    return seeded;
+  });
   const [loading, setLoading] = useState(false);
 
   const studentCount = students.length;
@@ -231,17 +241,15 @@ export default function CreateBreakoutModal({
       if (mode === 'AUTO') {
         assignments = generateAutoAssignments(students, roomCount, hostIdentity);
       } else if (mode === 'MANUAL') {
-        assignments = { ...manualAssignments };
-        // Any unassigned stay in main
-        students.forEach((s) => {
-          if (!assignments[s.identity]) assignments[s.identity] = 'main';
-        });
+        // Merge manual changes on top of existing assignments; only replace entries we touched
+        assignments = { ...existingAssignments, ...manualAssignments };
+        // Ensure host stays in main
         if (hostIdentity) {
           assignments[hostIdentity] = 'main';
         }
       } else if (mode === 'SELF_SELECT') {
-        // Empty assignments — students pick themselves
-        assignments = {};
+        // Preserve existing assignments but switch mode to self-select so students can opt-in
+        assignments = { ...existingAssignments };
       }
 
       const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ''}/sessions/${roomName}/breakouts`, {
@@ -263,15 +271,16 @@ export default function CreateBreakoutModal({
       if (mode === 'AUTO') {
         fallbackAssignments = generateAutoAssignments(students, roomCount, hostIdentity);
       } else if (mode === 'MANUAL') {
-        fallbackAssignments = { ...manualAssignments };
-        students.forEach((s) => { if (!fallbackAssignments[s.identity]) fallbackAssignments[s.identity] = 'main'; });
+        fallbackAssignments = { ...existingAssignments, ...manualAssignments };
         if (hostIdentity) fallbackAssignments[hostIdentity] = 'main';
+      } else if (mode === 'SELF_SELECT') {
+        fallbackAssignments = { ...existingAssignments };
       }
       onCreated(fallbackAssignments, roomCount, mode);
     } finally {
       setLoading(false);
     }
-  }, [roomName, students, roomCount, mode, manualAssignments, hostIdentity, onCreated]);
+  }, [roomName, students, roomCount, mode, manualAssignments, hostIdentity, existingAssignments, onCreated]);
 
   return (
     <div
