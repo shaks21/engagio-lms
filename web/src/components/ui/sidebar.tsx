@@ -98,15 +98,15 @@ export default function Sidebar() {
     setShowLogoutConfirm(false);
   };
 
-  const userInitials = user?.email
-    ? user.email
-        .split('@')[0]
-        .split(/[._-]/)
-        .map((n) => n[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : 'U';
+  const userInitials = (() => {
+    const name = user?.name || user?.email?.split('@')[0] || 'U';
+    return name
+      .split(/[\s._-]/)
+      .map((n) => n[0])
+      .join('')
+      .toUpperCase()
+      .slice(0, 2);
+  })();
 
   return (
     <>
@@ -212,7 +212,9 @@ export default function Sidebar() {
               </div>
               {!collapsed && (
                 <div className="flex-1 min-w-0 text-left">
-                  <p className="text-sm font-medium text-white truncate">{user?.email || 'User'}</p>
+                  <p className="text-sm font-medium text-white truncate">
+                    {user?.name || user?.email?.split('@')[0] || 'User'}
+                  </p>
                   <p className="text-[11px] text-gray-500 uppercase tracking-wider">{user?.role || 'USER'}</p>
                 </div>
               )}

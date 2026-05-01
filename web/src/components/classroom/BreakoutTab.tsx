@@ -90,6 +90,25 @@ function StudentAvatar({ participant, scores }: { participant: any; scores: any[
   );
 }
 
+/* ─── Room allocation label helper for dropdown options ─── */
+function getRoomAllocationLabel(roomCount: number, studentCount: number): string {
+  const base = `${roomCount} room${roomCount !== 1 ? 's' : ''}`;
+  if (studentCount === 0) return base;
+  if (roomCount === 1) return `${base} — ${studentCount} students`;
+
+  const perRoom = Math.floor(studentCount / roomCount);
+  const remainder = studentCount % roomCount;
+  const emptyRooms = Math.max(0, roomCount - studentCount);
+
+  if (emptyRooms > 0) {
+    return `${base} — ${studentCount} students (${perRoom > 0 ? `${perRoom} each` : '1 each'}, ${emptyRooms} empty)`;
+  }
+  if (remainder === 0) {
+    return `${base} — ${studentCount} students (${perRoom} each)`;
+  }
+  return `${base} — ${studentCount} students (${perRoom}–${perRoom + 1} each)`;
+}
+
 /* ─── Main component ─── */
 export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabProps) {
   const livekitParticipants = useParticipants();
@@ -565,7 +584,7 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
               >
                 {Array.from({ length: MAX_ROOMS }, (_, i) => i + 1).map((n) => {
                   return (
-                    <option key={n} value={n}>{n} room{n !== 1 ? 's' : ''}</option>
+                    <option key={n} value={n}>{getRoomAllocationLabel(n, studentCount)}</option>
                   );
                 })}
               </select>

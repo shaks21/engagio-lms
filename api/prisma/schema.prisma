@@ -54,6 +54,9 @@ model User {
   tenant       Tenant       @relation(fields: [tenantId], references: [id])
   email        String
   password     String
+  name         String?
+  avatar       String?
+  bio          String?
   role         Role         @default(STUDENT)
   courses      Course[]     @relation("InstructorCourses")
   enrollments  Enrollment[]

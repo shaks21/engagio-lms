@@ -11,8 +11,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [guestName, setGuestName] = useState('');
 
-  const { login } = useAuth();
+  const { login, guestLogin } = useAuth();
   const router = useRouter();
 
   async function handleSubmit(e: FormEvent) {
@@ -52,6 +53,58 @@ export default function LoginPage() {
               {error}
             </div>
           )}
+
+          {/* Guest Join */}
+          <div className="rounded-xl border border-dashed border-gray-600/50 p-4 bg-gray-800/20">
+            <h3 className="text-sm font-medium text-gray-300 mb-2">Continue as Guest</h3>
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!guestName.trim()) return;
+                setSubmitting(true);
+                setError('');
+                try {
+                  await guestLogin(guestName.trim());
+                  router.push('/dashboard');
+                } catch (err: any) {
+                  setError(err?.response?.data?.message || err?.message || 'Failed to join as guest');
+                } finally {
+                  setSubmitting(false);
+                }
+              }}
+              className="flex gap-2"
+            >
+              <input
+                type="text"
+                placeholder="Enter your name"
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                disabled={submitting}
+                className="flex-1 px-3 py-2 rounded-lg border border-gray-600 bg-[#0b0f1a] text-gray-100 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-engagio-500 focus:border-transparent transition-colors text-sm"
+              />
+              <button
+                type="submit"
+                disabled={submitting || !guestName.trim()}
+                className="whitespace-nowrap px-4 py-2 rounded-lg bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 text-white text-sm font-semibold transition-colors flex items-center gap-1.5"
+              >
+                {submitting ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <>
+                    Join as Guest
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+
+          {/* OR divider */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-gray-600/50" />
+            <span className="text-xs text-gray-500 uppercase">or sign in</span>
+            <div className="flex-1 h-px bg-gray-600/50" />
+          </div>
 
           {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">

@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Get,
+  Patch,
   Body,
   HttpCode,
   HttpStatus,
@@ -34,6 +35,19 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto) {
     return this.authService.login(dto);
+  }
+
+  @Post("guest")
+  @HttpCode(HttpStatus.OK)
+  async guest(@Body() dto: { displayName: string }) {
+    return this.authService.guestLogin(dto.displayName);
+  }
+
+  @Patch("me")
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  async updateProfile(@Request() req, @Body() dto: { name?: string; bio?: string; avatar?: string }) {
+    return this.authService.updateProfile(req.user.id, dto);
   }
 
   @Post("refresh")

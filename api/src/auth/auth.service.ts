@@ -101,6 +101,9 @@ export class AuthService {
       select: {
         id: true,
         email: true,
+        name: true,
+        avatar: true,
+        bio: true,
         role: true,
         tenantId: true,
         createdAt: true,
@@ -111,6 +114,68 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException("User not found");
     }
+
+    return user;
+  }
+
+  async guestLogin(displayName: string) {
+    let tenant = await this.prisma.tenant.findFirst();
+    if (!tenant) {
+      tenant = await this.prisma.tenant.create({
+        data: { name: "Engagio Default Organization" },
+      });
+    }
+
+    const email = `guest-${Date.now()}@engagio.local`;
+    const user = await this.prisma.user.create({
+      data: {
+        tenantId: tenant.id,
+        email,
+        password: await bcrypt.hash(Math.random().toString(36).slice(2), 10),
+        name: displayName || 'Guest',
+        role: "GUEST" as any,
+      },
+    });
+
+    const tokens = await this.generateTokens(
+      user.id,
+      user.email,
+      user.role,
+      user.tenantId,
+    );
+
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        tenantId: user.tenantId,
+      },
+      ...tokens,
+    };
+  }
+
+  async updateProfile(userId: string, dto: { name?: string; bio?: string; avatar?: string }) {
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name } : {}),
+        ...(dto.bio !== undefined ? { bio: dto.bio } : {}),
+        ...(dto.avatar !== undefined ? { avatar: dto.avatar } : {}),
+      },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatar: true,
+        bio: true,
+        role: true,
+        tenantId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    });
 
     return user;
   }

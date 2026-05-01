@@ -13,7 +13,10 @@ import axios from 'axios';
 export interface User {
   id: string;
   email: string;
-  role: 'STUDENT' | 'TEACHER' | 'ADMIN';
+  name: string | null;
+  avatar: string | null;
+  bio: string | null;
+  role: 'STUDENT' | 'TEACHER' | 'ADMIN' | 'GUEST';
   tenantId: string;
 }
 
@@ -24,7 +27,9 @@ interface AuthContextType {
   userId: string | null;
   tenantId: string | null;
   userName: string | null;
+  isGuest: boolean;
   login: (email: string, password: string) => Promise<void>;
+  guestLogin: (displayName: string) => Promise<void>;
   logout: () => void;
   setUser: (user: User | null) => void;
 }
@@ -93,6 +98,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTokenVersion(v => v + 1); // Trigger re-auth
   }, [API]);
 
+  const guestLogin = useCallback(async (displayName: string) => {
+    const response = await axios.post(
+      `${API}/auth/guest`,
+      { displayName }
+    );
+
+    const { accessToken, user: userData } = response.data;
+    localStorage.setItem(TOKEN_KEY, accessToken);
+    setUser(userData);
+    setTokenVersion(v => v + 1);
+  }, [API]);
+
   const logout = useCallback(async () => {
     try {
       const token = localStorage.getItem(TOKEN_KEY);
@@ -125,7 +142,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isAuthenticated = user !== null;
   const userId = user?.id ?? null;
   const tenantId = user?.tenantId ?? null;
-  const userName = user?.email ?? null;
+  const userName = user?.name || user?.email || null;
+  const isGuest = user?.role === 'GUEST';
 
   return (
     <AuthContext.Provider
@@ -136,7 +154,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         userId,
         tenantId,
         userName,
+        isGuest,
         login,
+        guestLogin,
         logout,
         setUser,
       }}

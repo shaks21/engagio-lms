@@ -202,6 +202,43 @@ export interface LiveScore {
   color: string;
 }
 
+export interface ProfileUser {
+  id: string;
+  email: string;
+  name: string | null;
+  avatar: string | null;
+  bio: string | null;
+  role: string;
+  tenantId: string;
+  createdAt: string;
+  updatedAt: string;
+  stats?: {
+    enrollments: number;
+    courses: number;
+    sessions: number;
+  };
+}
+
+export async function getProfile(): Promise<ProfileUser> {
+  const { data } = await api.get<ProfileUser>('/auth/me');
+  return data;
+}
+
+export async function updateProfile(dto: { name?: string; bio?: string; avatar?: string }): Promise<ProfileUser> {
+  const { data } = await api.patch<ProfileUser>('/auth/me', dto);
+  return data;
+}
+
+export async function guestLogin(displayName: string): Promise<{ user: ProfileUser; accessToken: string; refreshToken: string }> {
+  const { data } = await api.post('/auth/guest', { displayName });
+  return data;
+}
+
+export async function getUserAnalytics(userId: string) {
+  const { data } = await api.get(`/analytics/user/${userId}`);
+  return data;
+}
+
 export async function getLiveScores(sessionId: string): Promise<LiveScore[]> {
   const { data } = await api.get<LiveScore[]>(`/analytics/session/${sessionId}/live-scores`);
   return data;

@@ -26,8 +26,7 @@ export default function VideoTile({
   aspect = 'video',
 }: VideoTileProps) {
   const isSpeaking = false; // we rely on CSS visual class
-  const identity = participant.identity || participant.name || 'Unknown';
-  const name = identity;
+  const name = participant.name || participant.identity || 'Unknown';
   const audioMuted = !participant.isMicrophoneEnabled;
 
   const aspectCls = aspect === 'video' ? 'aspect-video' : 'aspect-square';

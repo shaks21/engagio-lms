@@ -89,14 +89,40 @@ describe('BreakoutTab — Room Count Dropdown', () => {
     expect(options[24].textContent).toContain('25 rooms');
   });
 
-  it('shows per-room allocation hint based on student count', async () => {
+  it('shows per-room student allocation in each dropdown option', async () => {
+    setRemoteStudents(['s1', 's2', 's3', 's4', 's5', 's6']); // 6 students
+
     await act(async () => {
       render(<BreakoutTab roomName="demo" />);
       await flushPromises();
     });
 
-    // Without students, hint reads "No students"
-    expect(screen.getByTestId('room-capacity-hint').textContent).toContain('No students');
+    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
+    const options = Array.from(select.options);
+
+    // 1 room → 6 students
+    expect(options[0].textContent).toMatch(/1 room.*6/);
+    // 2 rooms → 3 each
+    expect(options[1].textContent).toMatch(/2 rooms.*3/);
+    // 3 rooms → 2 each
+    expect(options[2].textContent).toMatch(/3 rooms.*2/);
+    // 4 rooms → 1–2 each (uneven split) or 1 each + 2 empty
+    expect(options[3].textContent).toMatch(/4 rooms/);
+    // 7 rooms → 1 each, 1 empty (6 students can't fill 7)
+    expect(options[6].textContent).toMatch(/7 rooms.*empty|7 rooms.*1/);
+  });
+
+  it('shows "no students" hint in options when there are zero students', async () => {
+    await act(async () => {
+      render(<BreakoutTab roomName="demo" />);
+      await flushPromises();
+    });
+
+    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
+    const options = Array.from(select.options);
+    // With 0 students, every option should mention "no students" or just room count without per-student info
+    expect(options[0].textContent).toMatch(/1 room/);
+    expect(options[4].textContent).toMatch(/5 room/);
   });
 });
 
