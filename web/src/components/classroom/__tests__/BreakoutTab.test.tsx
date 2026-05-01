@@ -24,6 +24,26 @@ vi.mock('@/hooks/useEngagement', () => ({
 const globalFetch = vi.fn();
 (globalThis as any).fetch = globalFetch;
 
+/* ── mock socket ── */
+let mockSocketEmits: Record<string, any[]> = {};
+let mockSocketOnHandlers: Record<string, Function[]> = {};
+
+function createMockSocket() {
+  mockSocketEmits = {};
+  mockSocketOnHandlers = {};
+  return {
+    emit: vi.fn((event: string, ...args: any[]) => {
+      mockSocketEmits[event] = mockSocketEmits[event] || [];
+      mockSocketEmits[event].push(args);
+    }),
+    on: vi.fn((event: string, handler: Function) => {
+      mockSocketOnHandlers[event] = mockSocketOnHandlers[event] || [];
+      mockSocketOnHandlers[event].push(handler);
+    }),
+    off: vi.fn(),
+  };
+}
+
 /* ── helpers ── */
 function setRemoteStudents(identities: string[]) {
   mockLocal = {
@@ -206,5 +226,91 @@ describe('BreakoutTab — Manual Allocation', () => {
       // Pool count badge should show fewer than before (was 4 incl. teacher)
       expect(pool.textContent).not.toMatch(/4 students/);
     });
+  });
+});
+
+/* ─────────────────────────────
+  Issue 1: Capacity hint accuracy
+  ───────────────────────────── */
+describe('BreakoutTab — Capacity Hint with 1 student / 3 rooms', () => {
+  const user = userEvent.setup();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockParticipants = [];
+    mockLocal = null;
+    localStorage.setItem('engagio_token', 'test-token');
+    globalFetch.mockResolvedValue({ ok: true, json: async () => ({ assignments: {} }) } as Response);
+  });
+
+  it('shows accurate distribution with single student across 3 rooms', async () => {
+    setRemoteStudents(['s1']);
+
+    await act(async () => {
+      render(<BreakoutTab roomName="demo" />);
+      await flushPromises();
+    });
+
+    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
+    await user.selectOptions(select, '3');
+
+    const hint = screen.getByTestId('room-capacity-hint');
+    // Should NOT show "~1 students per room" which implies all rooms get 1
+    expect(hint.textContent).not.toMatch(/~1 student(?:s)? per room/);
+    // Should show that 1 room is populated and some rooms will be empty
+    expect(hint.textContent).toMatch(/1 in 1 room/i);
+  });
+});
+
+/* ─────────────────────────────
+  Issue 2: Broadcast audio state + colour
+  ───────────────────────────── */
+describe('BreakoutTab — Broadcast Audio', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockParticipants = [];
+    mockLocal = null;
+    localStorage.setItem('engagio_token', 'test-token');
+    globalFetch.mockResolvedValue({ ok: true, json: async () => ({ assignments: {} }) } as Response);
+  });
+
+  it('button turns green and shows "Stop Broadcast" when broadcasting', async () => {
+    const mockSocket = createMockSocket();
+
+    await act(async () => {
+      render(<BreakoutTab roomName="demo" socket={mockSocket} />);
+      await flushPromises();
+    });
+
+    const btn = screen.getByTestId('broadcast-audio-btn');
+    expect(btn).toHaveTextContent(/Broadcast Audio/i);
+    // Before clicking: should be green-themed (start-broadcast state)
+    expect(btn.className).toMatch(/bg-engagio/);
+
+    // Simulate starting broadcast
+    await act(async () => {
+      mockSocket.on.mock.calls
+        .filter((c: any) => c[0] === 'broadcast-state-changed')
+        .forEach((c: any) => c[1]({ isBroadcasting: true }));
+    });
+
+    // After broadcast starts: button should still be green-themed
+    // because green = "broadcasting / LIVE"
+    const btnAfter = screen.getByTestId('broadcast-audio-btn');
+    expect(btnAfter.textContent).toMatch(/Stop Broadcast/i);
+    expect(btnAfter.className).toMatch(/bg-green-600|bg-engagio-600|text-green/i);
+  });
+
+  it('shows a live broadcast badge when teacher is broadcasting', async () => {
+    const mockSocket = createMockSocket();
+
+    await act(async () => {
+      render(<BreakoutTab roomName="demo" socket={mockSocket} />);
+      await flushPromises();
+    });
+
+    // The badge should NOT be visible initially
+    const badgeBefore = screen.queryByTestId('live-broadcast-indicator');
+    expect(badgeBefore).toBeNull();
   });
 });

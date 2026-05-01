@@ -446,8 +446,9 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
   /* compute per-room capacity hint */
   const capacityHint = useMemo(() => {
     if (studentCount === 0) return '';
-    const perRoom = Math.ceil(studentCount / roomCount);
-    return `~${perRoom} student${perRoom !== 1 ? 's' : ''} per room`;
+    const filledRooms = Math.min(studentCount, roomCount);
+    const emptyRooms = roomCount - filledRooms;
+    return `${studentCount} in ${filledRooms} room${filledRooms !== 1 ? 's' : ''}${emptyRooms > 0 ? ` | ${emptyRooms} empty` : ''}`;
   }, [studentCount, roomCount]);
 
   /* room IDs for rendering (excluding 'main') */
@@ -498,11 +499,12 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
               </label>
             )}
             <button
+              data-testid="broadcast-audio-btn"
               onClick={handleToggleBroadcast}
               disabled={loading}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
                 isBroadcasting
-                  ? 'bg-red-600/20 text-red-400 border border-red-500/30 hover:bg-red-600/30'
+                  ? 'bg-green-600/20 text-green-400 border border-green-500/30 hover:bg-green-600/30'
                   : 'bg-engagio-600/20 text-engagio-400 border border-engagio-500/30 hover:bg-engagio-600/30'
               }`}
             >
@@ -534,6 +536,22 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
           </div>
         )}
 
+        {/* Live broadcast indicator for students */}
+        {isBroadcasting && (
+          <div
+            data-testid="live-broadcast-indicator"
+            className="flex items-center justify-between bg-green-900/20 border border-green-500/20 rounded-md px-2.5 py-1"
+          >
+            <span className="text-[10px] text-green-400 flex items-center gap-1.5">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+              </span>
+              Teacher is broadcasting audio
+            </span>
+          </div>
+        )}
+
         {/* Teacher controls: room count + shuffle + manual */}
         {isTeacher && (
           <div className="space-y-2 pt-1">
@@ -546,12 +564,8 @@ export default function BreakoutTab({ roomName, socket, onToast }: BreakoutTabPr
                 className="bg-gray-800 border border-gray-700 rounded-md px-2 py-1 text-xs text-white focus:outline-none focus:border-engagio-500"
               >
                 {Array.from({ length: MAX_ROOMS }, (_, i) => i + 1).map((n) => {
-                  const perRoom = studentCount > 0 ? Math.ceil(studentCount / n) : 0;
-                  const label = studentCount > 0
-                    ? `${n} room${n !== 1 ? 's' : ''} (~${perRoom} each)`
-                    : `${n} room${n !== 1 ? 's' : ''}`;
                   return (
-                    <option key={n} value={n}>{label}</option>
+                    <option key={n} value={n}>{n} room{n !== 1 ? 's' : ''}</option>
                   );
                 })}
               </select>

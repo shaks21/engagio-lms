@@ -128,7 +128,7 @@ export default function QuizCreatorForm({ sessionId, onCreateQuiz }: QuizCreator
           className="w-full mt-2 bg-engagio-600 hover:bg-engagio-500 disabled:opacity-50 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors"
           data-testid="submit-quiz-btn"
         >
-          {isSubmitting ? 'Creating…' : 'Create Quiz'}
+          {isSubmitting ? 'Starting…' : 'Start Quiz'}
         </button>
       </form>
     </div>

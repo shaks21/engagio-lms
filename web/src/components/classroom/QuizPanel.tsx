@@ -76,17 +76,27 @@ export default function QuizPanel({ sessionId, socket, isTeacher }: QuizPanelPro
         });
         if (!res.ok) throw new Error(await res.text());
         const data = await res.json();
-        setQuizSessionId(data.id);
+
+        const newQuizSessionId = data.id;
+        setQuizSessionId(newQuizSessionId);
         setTotalQuestions(questions.length);
-        setStatus('pending');
-        setCreating(false);
         setShowLeaderboard(false);
+
+        // ── AUTO-START: immediately broadcast to all participants ──
+        if (socket && newQuizSessionId) {
+          socket.emit('quiz-start', { quizSessionId: newQuizSessionId, sessionId });
+          setStatus('active');
+          setCurrentQuestionIndex(0);
+        } else {
+          setStatus('pending');
+        }
       } catch (e: any) {
         setError(e.message || 'Failed to create quiz');
+      } finally {
         setCreating(false);
       }
     },
-    [API, sessionId]
+    [API, sessionId, socket]
   );
 
   const handleStartQuiz = useCallback(() => {
