@@ -39,7 +39,7 @@ interface ToolbarProps {
 
 function TooltipButton({
   children, onClick, active = false, activeClass = '', inactiveClass = '',
-  tooltip, badge, flash = false, disabled = false,
+  tooltip, badge, flash = false, disabled = false, 'data-testid': dataTestId,
 }: {
   children: React.ReactNode;
   onClick: () => void;
@@ -50,10 +50,12 @@ function TooltipButton({
   badge?: React.ReactNode;
   flash?: boolean;
   disabled?: boolean;
+  'data-testid'?: string;
 }) {
   const [showTip, setShowTip] = useState(false);
   return (
     <button
+      data-testid={dataTestId}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       onMouseEnter={() => setShowTip(true)}
@@ -162,11 +164,12 @@ function LoudspeakerButton() {
 
 /* ─── Settings Dialog ─── */
 function SettingsDialog({
-  open, onClose, room,
+  open, onClose, room, onToast,
 }: {
   open: boolean;
   onClose: () => void;
   room?: any;
+  onToast?: (toast: any) => void;
 }) {
   const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
@@ -194,13 +197,45 @@ function SettingsDialog({
 
   const handleSwitchCamera = useCallback(async (facing: 'user' | 'environment') => {
     setCameraFacing(facing);
-    if (!room?.switchActiveDevice) return;
+    if (!room?.switchActiveDevice) {
+      onToast?.({ id: Date.now().toString(), message: 'Camera switching not available', type: 'warning' });
+      return;
+    }
+
+    // ── 1. Stop existing video tracks to free the device ──
+    try {
+      const localPub = room.localParticipant?.getTrackPublication?.('video');
+      if (localPub?.track?.stop) {
+        localPub.track.stop();
+        console.log('[Camera] Stopped existing video track before switching');
+      }
+    } catch {
+      // ignore
+    }
+
+    // ── 2. Attempt switch to requested facingMode ──
     try {
       await room.switchActiveDevice('videoinput', undefined, true, { facingMode: facing });
-    } catch (e) {
-      console.warn('[Settings] Camera switch not supported in this browser:', e);
+      console.log(`[Camera] Switched to ${facing} successfully`);
+    } catch (err: any) {
+      console.warn('[Camera] Switch failed, attempting fallback:', err);
+
+      // ── 3. Hardware Fallback: revert to 'user' if 'environment' fails ──
+      if (facing === 'environment') {
+        try {
+          setCameraFacing('user');
+          await room.switchActiveDevice('videoinput', undefined, true, { facingMode: 'user' });
+          console.log('[Camera] Fallback to user succeeded');
+          onToast?.({ id: Date.now().toString(), message: 'Rear camera unavailable — switched to front', type: 'warning' });
+        } catch (fallbackErr: any) {
+          console.error('[Camera] Fallback also failed:', fallbackErr);
+          onToast?.({ id: Date.now().toString(), message: 'Camera in use by another app. Please close other camera apps and try again.', type: 'error' });
+        }
+      } else {
+        onToast?.({ id: Date.now().toString(), message: 'Camera in use by another app. Please close other camera apps and try again.', type: 'error' });
+      }
     }
-  }, [room]);
+  }, [room, onToast]);
 
   const handleSwitchAudioOutput = useCallback(async (deviceId: string) => {
     setSelectedOutputId(deviceId);
@@ -447,6 +482,6 @@ export default function Toolbar({
       </div>
     </div>
 
-    <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} room={room} />
+    <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} room={room} onToast={onToast} />
   </>);
 }

@@ -194,6 +194,7 @@ export default function CreateBreakoutModal({
     return seeded;
   });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const studentCount = students.length;
 
@@ -233,6 +234,7 @@ export default function CreateBreakoutModal({
 
   const handleCreate = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const token = localStorage.getItem('engagio_token');
 
@@ -241,14 +243,11 @@ export default function CreateBreakoutModal({
       if (mode === 'AUTO') {
         assignments = generateAutoAssignments(students, roomCount, hostIdentity);
       } else if (mode === 'MANUAL') {
-        // Merge manual changes on top of existing assignments; only replace entries we touched
         assignments = { ...existingAssignments, ...manualAssignments };
-        // Ensure host stays in main
         if (hostIdentity) {
           assignments[hostIdentity] = 'main';
         }
       } else if (mode === 'SELF_SELECT') {
-        // Preserve existing assignments but switch mode to self-select so students can opt-in
         assignments = { ...existingAssignments };
       }
 
@@ -260,23 +259,15 @@ export default function CreateBreakoutModal({
 
       if (!res.ok) {
         const body = await res.text().catch(() => '');
-        throw new Error(`Failed to create rooms: ${res.status} ${body}`);
+        throw new Error(`Failed to save rooms: ${res.status} ${body}`);
       }
 
+      // Success: update parent and close modal
       onCreated(assignments, roomCount, mode);
     } catch (e: any) {
-      console.error('[CreateBreakoutModal] Error:', e);
-      // Still call onCreated so UI updates
-      let fallbackAssignments: Record<string, string> = {};
-      if (mode === 'AUTO') {
-        fallbackAssignments = generateAutoAssignments(students, roomCount, hostIdentity);
-      } else if (mode === 'MANUAL') {
-        fallbackAssignments = { ...existingAssignments, ...manualAssignments };
-        if (hostIdentity) fallbackAssignments[hostIdentity] = 'main';
-      } else if (mode === 'SELF_SELECT') {
-        fallbackAssignments = { ...existingAssignments };
-      }
-      onCreated(fallbackAssignments, roomCount, mode);
+      console.error('[CreateBreakoutModal] Save failed:', e);
+      setError(e.message || 'Failed to save breakout rooms. Please try again.');
+      // Do NOT call onCreated — keep modal open so user can retry
     } finally {
       setLoading(false);
     }
@@ -455,6 +446,15 @@ export default function CreateBreakoutModal({
             </div>
           )}
         </div>
+
+        {/* Error banner */}
+        {error && (
+          <div data-testid="modal-error-msg" className="px-6 pt-2 pb-0">
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 text-xs text-red-400">
+              {error}
+            </div>
+          </div>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-800">
