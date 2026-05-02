@@ -837,6 +837,7 @@ function InnerRoomUI({
           viewMode={viewMode}
           onViewModeChange={setViewMode}
           canPresent={isTeacher || (() => { try { return !!JSON.parse(room.localParticipant.metadata || '{}').breakoutRoomId; } catch { return false; } })()}
+          room={room}
         />
       </div>
 
@@ -1041,7 +1042,22 @@ export default function ClassroomContent({ sessionId }: ClassroomContentProps) {
         connect={true}
         video={preJoinConfig.cameraEnabled}
         audio={preJoinConfig.micEnabled}
-        options={{ adaptiveStream: true, dynacast: true }}
+        options={{
+          adaptiveStream: true,
+          dynacast: true,
+          audioCaptureDefaults: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+            sampleRate: 48000,
+            channelCount: 2,
+            deviceId: preJoinConfig.audioInputId || undefined,
+          },
+          videoCaptureDefaults: {
+            facingMode: preJoinConfig.facingMode || 'user',
+            deviceId: preJoinConfig.videoDeviceId || undefined,
+          },
+        }}
         onConnected={onConnected}
         onDisconnected={onDisconnected}
         onError={onError}

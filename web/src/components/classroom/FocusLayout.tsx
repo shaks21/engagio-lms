@@ -9,6 +9,16 @@ import {
 import type { Participant } from 'livekit-client';
 import { Track } from 'livekit-client';
 import { Pin, MicOff, Monitor, Minus } from 'lucide-react';
+import { useAudioGainBoost } from '@/hooks/useAudioGainBoost';
+
+/* ─── Mobile detection utility (works for SSR-safe hydration) ─── */
+function useMobileDetection() {
+  const [isMobile, setIsMobile] = React.useState(false);
+  React.useEffect(() => {
+    setIsMobile(/Android|iPhone|iPad|iPod|Opera Mini|IEMobile|WPDesktop/i.test(navigator.userAgent));
+  }, []);
+  return isMobile;
+}
 
 export type ViewMode = 'focus' | 'grid' | 'immersive';
 
@@ -73,6 +83,10 @@ function SafeParticipantTile({
 
   // Audio ref
   const audioRef = React.useRef<HTMLAudioElement>(null);
+
+  // Boost remote audio volume on mobile devices (80% louder)
+  const isMobile = useMobileDetection();
+  useAudioGainBoost(audioRef, { enabled: !participant.isLocal && isMobile, gain: 5.0 });
 
   React.useEffect(() => {
     const videoEl = videoRef.current;

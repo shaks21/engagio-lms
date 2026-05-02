@@ -1,11 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Mic, MicOff, Video, VideoOff, ArrowRight, Volume2 } from 'lucide-react';
+import { Mic, MicOff, Video, VideoOff, ArrowRight, Volume2, Smartphone, Camera as CameraIcon } from 'lucide-react';
+import { useMediaDevices } from '@/hooks/useMediaDevices';
 
 export interface PreJoinConfig {
   micEnabled: boolean;
   cameraEnabled: boolean;
+  facingMode?: 'user' | 'environment';
+  audioInputId?: string | null;
+  videoDeviceId?: string | null;
 }
 
 interface PreJoinProps {
@@ -21,48 +25,44 @@ function getMediaDeviceStream(constraints: MediaStreamConstraints) {
 export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
   const [micEnabled, setMicEnabled] = useState(false);
   const [cameraEnabled, setCameraEnabled] = useState(false);
-  const [micAvailable, setMicAvailable] = useState(false);
-  const [cameraAvailable, setCameraAvailable] = useState(false);
   const [previewStream, setPreviewStream] = useState<MediaStream | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Mic test state
+  const {
+    videoDevices,
+    audioInputDevices,
+    hasPermission,
+    enumerate,
+    facingMode,
+    setFacingMode,
+    selectedCameraId,
+    selectedAudioInputId,
+    getVideoConstraints,
+    getAudioConstraints,
+  } = useMediaDevices();
+
+  useEffect(() => {
+    enumerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [micLevel, setMicLevel] = useState(0);
   const micAnalyserRef = useRef<AnalyserNode | null>(null);
   const micAudioCtxRef = useRef<AudioContext | null>(null);
   const micRafRef = useRef<number>(0);
 
-  // Check available devices
-  useEffect(() => {
-    let cancelled = false;
-    const checkDevices = async () => {
-      try {
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const mics = devices.filter((d) => d.kind === 'audioinput');
-        const cams = devices.filter((d) => d.kind === 'videoinput');
-        if (!cancelled) {
-          setMicAvailable(mics.length > 0);
-          setCameraAvailable(cams.length > 0);
-        }
-      } catch {
-        if (!cancelled) {
-          setMicAvailable(false);
-          setCameraAvailable(false);
-        }
-      }
-    };
-    checkDevices();
-    return () => { cancelled = true; };
-  }, []);
-
-  // Update preview when camera enabled
+  // Camera preview with facingMode + device constraints
   useEffect(() => {
     let active = true;
 
-    if (cameraEnabled && cameraAvailable) {
-      getMediaDeviceStream({ video: true, audio: false })
+    if (cameraEnabled && hasPermission) {
+      const constraints: MediaStreamConstraints = {
+        video: getVideoConstraints(),
+        audio: false,
+      };
+      getMediaDeviceStream(constraints)
         .then((s) => {
           if (!active) {
             s.getTracks().forEach((t) => t.stop());
@@ -78,13 +78,10 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
       });
     }
 
-    return () => {
-      active = false;
-    };
+    return () => { active = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraEnabled, cameraAvailable]);
+  }, [cameraEnabled, hasPermission, facingMode, selectedCameraId]);
 
-  // Bind stream to video element whenever either changes
   useEffect(() => {
     const el = videoRef.current;
     if (!el) return;
@@ -96,9 +93,9 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
     }
   }, [previewStream]);
 
-  // Toggle preview when enabling mic + setup mic test visualizer
+  // Mic preview with audio-enhancement constraints + gain boost
   useEffect(() => {
-    if (!micEnabled || !micAvailable) {
+    if (!micEnabled || !hasPermission) {
       if (micRafRef.current) cancelAnimationFrame(micRafRef.current);
       micAnalyserRef.current?.disconnect();
       micAudioCtxRef.current?.close().catch(() => {});
@@ -111,7 +108,12 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
     let cancelled = false;
     let stream: MediaStream | null = null;
 
-    getMediaDeviceStream({ audio: true, video: false })
+    const constraints: MediaStreamConstraints = {
+      audio: getAudioConstraints(),
+      video: false,
+    };
+
+    getMediaDeviceStream(constraints)
       .then((s) => {
         if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
         stream = s;
@@ -123,6 +125,12 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
         src.connect(analyser);
         micAudioCtxRef.current = ctx;
         micAnalyserRef.current = analyser;
+
+        // Boost audio gain for mobile (80% louder)
+        const gainNode = ctx.createGain();
+        gainNode.gain.value = 1.8;
+        src.connect(gainNode);
+        gainNode.connect(analyser);
 
         const dataArr = new Uint8Array(analyser.frequencyBinCount);
         const update = () => {
@@ -144,21 +152,27 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
       stream?.getTracks().forEach((t) => t.stop());
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micEnabled, micAvailable]);
+  }, [micEnabled, hasPermission, selectedAudioInputId]);
+
+  const handleFlipCamera = useCallback(() => {
+    setFacingMode(facingMode === 'user' ? 'environment' : 'user');
+  }, [facingMode, setFacingMode]);
 
   const handleJoin = useCallback(() => {
-    // Stop preview stream before joining
-    if (previewStream) {
-      previewStream.getTracks().forEach((t) => t.stop());
-    }
+    if (previewStream) previewStream.getTracks().forEach((t) => t.stop());
     setLoading(true);
-    onJoin({ micEnabled, cameraEnabled });
-  }, [micEnabled, cameraEnabled, previewStream, onJoin]);
+    onJoin({
+      micEnabled,
+      cameraEnabled,
+      facingMode,
+      audioInputId: selectedAudioInputId,
+      videoDeviceId: selectedCameraId,
+    });
+  }, [micEnabled, cameraEnabled, previewStream, onJoin, facingMode, selectedAudioInputId, selectedCameraId]);
 
   return (
     <div className="fixed inset-0 z-[70] bg-black/80 flex items-center justify-center p-4">
       <div className="bg-edu-slate border border-gray-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-        {/* Header */}
         <div className="p-6 text-center border-b border-gray-800">
           <h2 className="text-xl font-bold text-white mb-1">Ready to join?</h2>
           <p className="text-sm text-gray-400">
@@ -166,7 +180,6 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
           </p>
         </div>
 
-        {/* Camera preview */}
         <div className="aspect-video bg-gray-900 relative overflow-hidden">
           {cameraEnabled && previewStream ? (
             <video
@@ -186,9 +199,24 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
               </div>
             </div>
           )}
+
+          {cameraEnabled && videoDevices.length > 1 && (
+            <button
+              onClick={handleFlipCamera}
+              className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-full bg-black/60 backdrop-blur-sm
+                         border border-white/10 text-white flex items-center justify-center
+                         hover:bg-black/80 active:scale-95 transition-all cursor-pointer"
+              title={facingMode === 'user' ? 'Switch to rear camera' : 'Switch to front camera'}
+            >
+              {facingMode === 'user' ? (
+                <Smartphone className="w-4 h-4" />
+              ) : (
+                <CameraIcon className="w-4 h-4" />
+              )}
+            </button>
+          )}
         </div>
 
-        {/* Controls row — OUTSIDE video preview so buttons don't cover it */}
         <div className="px-6 pt-5 pb-2 flex items-center justify-center gap-4">
           <button
             onClick={() => setMicEnabled((v) => !v)}
@@ -197,13 +225,8 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
                 ? 'bg-green-600 hover:bg-green-700 text-white animate-mic-active'
                 : 'bg-edu-danger hover:bg-red-700 text-white'
             }`}
-            aria-label={micEnabled ? 'Mute' : 'Unmute'}
           >
-            {micEnabled && micAvailable ? (
-              <Mic className="w-6 h-6" />
-            ) : (
-              <MicOff className="w-6 h-6" />
-            )}
+            {micEnabled && audioInputDevices.length > 0 ? <Mic className="w-6 h-6" /> : <MicOff className="w-6 h-6" />}
           </button>
 
           <button
@@ -213,18 +236,12 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
                 ? 'bg-green-600 hover:bg-green-700 text-white animate-camera-active'
                 : 'bg-edu-danger hover:bg-red-700 text-white'
             }`}
-            aria-label={cameraEnabled ? 'Turn camera off' : 'Turn camera on'}
           >
-            {cameraEnabled && cameraAvailable ? (
-              <Video className="w-6 h-6" />
-            ) : (
-              <VideoOff className="w-6 h-6" />
-            )}
+            {cameraEnabled && videoDevices.length > 0 ? <Video className="w-6 h-6" /> : <VideoOff className="w-6 h-6" />}
           </button>
         </div>
 
-        {/* Mic test visualizer */}
-        {micEnabled && micAvailable && (
+        {micEnabled && audioInputDevices.length > 0 && (
           <div className="px-6 pb-4">
             <div className="flex items-center gap-2 mb-2">
               <Volume2 className="w-3.5 h-3.5 text-gray-400" />
@@ -239,18 +256,9 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
                   <div
                     key={i}
                     className={`flex-1 rounded-sm transition-all duration-75 ${
-                      filled
-                        ? i > 15
-                          ? 'bg-red-400'
-                          : i > 10
-                            ? 'bg-yellow-400'
-                            : 'bg-green-500'
-                        : 'bg-gray-700'
+                      filled ? (i > 15 ? 'bg-red-400' : i > 10 ? 'bg-yellow-400' : 'bg-green-500') : 'bg-gray-700'
                     }`}
-                    style={{
-                      height: `${20 + Math.random() * 60}%`,
-                      opacity: filled ? 0.8 + (i / 20) * 0.2 : 0.3,
-                    }}
+                    style={{ height: `${20 + Math.random() * 60}%`, opacity: filled ? 0.8 + (i / 20) * 0.2 : 0.3 }}
                   />
                 );
               })}
@@ -258,25 +266,23 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
           </div>
         )}
 
-        {/* Footer */}
         <div className="px-6 pb-6 pt-2 space-y-3">
           {error && (
-            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-3 py-2 rounded-lg text-sm">
-              {error}
-            </div>
+            <div className="bg-red-500/10 border border-red-500/30 text-red-400 px-3 py-2 rounded-lg text-sm">{error}</div>
           )}
-
-          {!micAvailable && (
-            <p className="text-yellow-400 text-xs">⚠ No microphone detected</p>
+          {!hasPermission && (
+            <p className="text-yellow-400 text-xs">⚠ Allow camera and microphone access for best experience</p>
           )}
-          {!cameraAvailable && (
+          {videoDevices.length === 0 && (
             <p className="text-yellow-400 text-xs">⚠ No camera detected</p>
           )}
-
+          {audioInputDevices.length === 0 && (
+            <p className="text-yellow-400 text-xs">⚠ No microphone detected</p>
+          )}
           <button
             onClick={handleJoin}
             disabled={loading}
-            className="w-full py-3 bg-engagio-600 hover:bg-engagio-700 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2"
+            className="w-full py-3 bg-engagio-600 hover:bg-engagio-700 disabled:opacity-50 text-white font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
             <ArrowRight className="w-4 h-4" />
             {loading ? 'Joining…' : 'Join Classroom'}

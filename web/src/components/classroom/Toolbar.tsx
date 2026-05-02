@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, Hand, MessageSquare,
   Smile, PhoneOff, MoreHorizontal, PanelRight, Pin,
-  Settings, X, Grid3x3, Focus, Maximize, LogOut,
+  Settings as SettingsIcon, X, Grid3x3, Focus, Maximize, LogOut,
 } from 'lucide-react';
 
 export interface Toast {
@@ -32,6 +32,7 @@ interface ToolbarProps {
   isLocalPinned?: boolean;
   viewMode?: 'focus' | 'grid' | 'immersive';
   onViewModeChange?: (mode: 'focus' | 'grid' | 'immersive') => void;
+  room?: any;
   canPresent?: boolean;
 }
 
@@ -141,21 +142,60 @@ function MoreMenu({
 }
 
 /* ─── Settings Dialog ─── */
-function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void; }) {
+function SettingsDialog({
+  open, onClose, room,
+}: {
+  open: boolean;
+  onClose: () => void;
+  room?: any;
+}) {
   const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
-  const [audioOutput, setAudioOutput] = useState<'speaker' | 'headset'>('speaker');
+  const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
+  const [selectedOutputId, setSelectedOutputId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState(true);
+
+  // Enumerate real audio output devices
+  useEffect(() => {
+    if (!open) return;
+    navigator.mediaDevices.enumerateDevices().then((devices) => {
+      const outputs = devices.filter((d) => d.kind === 'audiooutput');
+      setAudioOutputs(outputs);
+      if (outputs.length > 0 && !selectedOutputId) {
+        setSelectedOutputId(outputs[0].deviceId);
+      }
+    }).catch(() => {});
+  }, [open, selectedOutputId]);
+
+  const handleSwitchCamera = useCallback(async (facing: 'user' | 'environment') => {
+    setCameraFacing(facing);
+    if (!room?.switchActiveDevice) return;
+    try {
+      await room.switchActiveDevice('videoinput', undefined, true, { facingMode: facing });
+    } catch {
+      console.warn('[Settings] Camera switch not supported in this browser');
+    }
+  }, [room]);
+
+  const handleSwitchAudioOutput = useCallback(async (deviceId: string) => {
+    setSelectedOutputId(deviceId);
+    if (!room?.switchActiveDevice) return;
+    try {
+      await room.switchActiveDevice('audiooutput', deviceId);
+    } catch {
+      console.warn('[Settings] Audio output switch not supported');
+    }
+  }, [room]);
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 backdrop-blur-sm"
       onClick={onClose}>
-      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm mx-4 shadow-2xl"
+      <div className="bg-gray-900 border border-gray-700 rounded-2xl w-full max-w-sm mx-4 shadow-2xl max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
           <h2 className="text-white font-semibold flex items-center gap-2">
-            <Settings className="w-5 h-5 text-engagio-400" />
+            <SettingsIcon className="w-5 h-5 text-engagio-400" />
             Settings
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
@@ -164,38 +204,53 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void;
         </div>
 
         <div className="p-5 space-y-5">
+          {/* Camera Facing */}
           <div>
             <label className="text-xs text-gray-500 uppercase tracking-wider font-medium">Camera</label>
             <div className="flex gap-2 mt-2">
               {(['user', 'environment'] as const).map((facing) => (
                 <button
                   key={facing}
-                  onClick={() => setCameraFacing(facing)}
+                  onClick={() => handleSwitchCamera(facing)}
                   className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
                     cameraFacing === facing ? 'bg-engagio-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                   }`}
                 >
-                  {facing === 'user' ? 'Front Camera' : 'Rear Camera'}
+                  {facing === 'user' ? '📷 Front' : '📸 Rear'}
                 </button>
               ))}
             </div>
           </div>
 
+          {/* Audio Output (real devices) */}
           <div>
             <label className="text-xs text-gray-500 uppercase tracking-wider font-medium">Audio Output</label>
-            <div className="flex gap-2 mt-2">
-              {(['speaker', 'headset'] as const).map((output) => (
-                <button
-                  key={output}
-                  onClick={() => setAudioOutput(output)}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium transition-colors ${
-                    audioOutput === output ? 'bg-engagio-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-                  }`}
-                >
-                  {output === 'speaker' ? '🔊 Speaker' : '🎧 Headset'}
-                </button>
-              ))}
-            </div>
+            {audioOutputs.length === 0 ? (
+              <p className="text-xs text-gray-500 mt-2">Your browser does not support audio output switching.</p>
+            ) : (
+              <div className="flex flex-col gap-1.5 mt-2">
+                {audioOutputs.map((device) => (
+                  <button
+                    key={device.deviceId}
+                    onClick={() => handleSwitchAudioOutput(device.deviceId)}
+                    className={`flex items-center gap-2 py-2 px-3 rounded-lg text-sm font-medium transition-colors text-left ${
+                      selectedOutputId === device.deviceId
+                        ? 'bg-engagio-600 text-white'
+                        : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                    }`}
+                  >
+                    <span className="text-base">{
+                      device.label.toLowerCase().includes('headphone') ||
+                      device.label.toLowerCase().includes('headset') ||
+                      device.label.toLowerCase().includes('earphone')
+                        ? '🎧'
+                        : '🔊'
+                    }</span>
+                    <span className="truncate">{device.label || 'Unknown Device'}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center justify-between">
@@ -218,7 +273,7 @@ function SettingsDialog({ open, onClose }: { open: boolean; onClose: () => void;
 
         <div className="px-5 py-4 border-t border-gray-800">
           <button onClick={onClose}
-            className="w-full py-2.5 bg-engagio-600 hover:bg-engagio-700 text-white font-medium rounded-lg transition-colors">
+            className="w-full py-2.5 bg-engagio-600 hover:bg-engagio-700 text-white font-medium rounded-lg transition-colors cursor-pointer">
             Done
           </button>
         </div>
@@ -231,7 +286,7 @@ export default function Toolbar({
   micMuted, cameraOff, handRaised, screenShareActive, unreadChatCount = 0,
   onToggleMic, onToggleCamera, onToggleScreenShare, onToggleHandRaise,
   onToggleChat, onToggleSidebar, onLeave, onToast, onPinLocal,
-  isLocalPinned, viewMode, onViewModeChange, canPresent,
+  isLocalPinned, viewMode, onViewModeChange, canPresent, room,
 }: ToolbarProps) {
   const micFlashing = !micMuted;
   const camFlashing = !cameraOff;
@@ -331,7 +386,7 @@ export default function Toolbar({
         <TooltipButton onClick={() => setSettingsOpen(true)} tooltip="Settings"
           inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
         >
-          <Settings className="w-5 h-5" />
+          <SettingsIcon className="w-5 h-5" />
         </TooltipButton>
 
         <MoreMenu viewMode={viewMode} onViewModeChange={onViewModeChange} onLeave={onLeave} />
@@ -346,6 +401,6 @@ export default function Toolbar({
       </div>
     </div>
 
-    <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+    <SettingsDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} room={room} />
   </>);
 }
