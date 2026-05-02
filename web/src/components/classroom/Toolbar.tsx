@@ -147,7 +147,9 @@ function LoudspeakerButton() {
   const { isSpeaker, setSpeaker } = useLoudspeaker();
   return (
     <TooltipButton
-      onClick={() => setSpeaker(!isSpeaker)}
+      onClick={() => {
+        try { setSpeaker(!isSpeaker); } catch (e) { console.warn('[Loudspeaker] Toggle failed:', e); }
+      }}
       active={isSpeaker}
       activeClass="bg-engagio-600 hover:bg-engagio-700 text-white ring-2 ring-engagio-400/50"
       inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
@@ -175,13 +177,19 @@ function SettingsDialog({
   // Enumerate real audio output devices
   useEffect(() => {
     if (!open) return;
+    if (!navigator.mediaDevices?.enumerateDevices) {
+      setAudioOutputs([]);
+      return;
+    }
     navigator.mediaDevices.enumerateDevices().then((devices) => {
       const outputs = devices.filter((d) => d.kind === 'audiooutput');
       setAudioOutputs(outputs);
       if (outputs.length > 0 && !selectedOutputId) {
         setSelectedOutputId(outputs[0].deviceId);
       }
-    }).catch(() => {});
+    }).catch(() => {
+      setAudioOutputs([]);
+    });
   }, [open, selectedOutputId]);
 
   const handleSwitchCamera = useCallback(async (facing: 'user' | 'environment') => {
@@ -189,8 +197,8 @@ function SettingsDialog({
     if (!room?.switchActiveDevice) return;
     try {
       await room.switchActiveDevice('videoinput', undefined, true, { facingMode: facing });
-    } catch {
-      console.warn('[Settings] Camera switch not supported in this browser');
+    } catch (e) {
+      console.warn('[Settings] Camera switch not supported in this browser:', e);
     }
   }, [room]);
 
@@ -199,8 +207,8 @@ function SettingsDialog({
     if (!room?.switchActiveDevice) return;
     try {
       await room.switchActiveDevice('audiooutput', deviceId);
-    } catch {
-      console.warn('[Settings] Audio output switch not supported');
+    } catch (e) {
+      console.warn('[Settings] Audio output switch not supported:', e);
     }
   }, [room]);
 
@@ -419,7 +427,9 @@ export default function Toolbar({
 
         <LoudspeakerButton />
 
-        <TooltipButton onClick={() => setSettingsOpen(true)} tooltip="Settings"
+        <TooltipButton
+          data-testid="settings-btn"
+          onClick={() => setSettingsOpen(true)} tooltip="Settings"
           inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
         >
           <SettingsIcon className="w-5 h-5" />

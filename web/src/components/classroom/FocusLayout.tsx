@@ -105,7 +105,8 @@ function SafeParticipantTile({
     if (audioEl && audioTrack && !participant.isLocal) {
       audioTrack.attach(audioEl);
       audioEl.muted = false;
-      audioEl.play().catch(() => {});
+      const p = audioEl.play();
+      if (p != null && typeof p.catch === 'function') p.catch(() => {});
       return () => {
         audioTrack?.detach(audioEl);
       };

@@ -91,7 +91,8 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
     if (!el) return;
     if (previewStream) {
       el.srcObject = previewStream;
-      el.play().catch(() => {});
+      const p = el.play();
+      if (p != null && typeof p.catch === 'function') p.catch(() => {});
     } else {
       el.srcObject = null;
     }
@@ -229,6 +230,7 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
 
         <div className="px-6 pt-5 pb-2 flex items-center justify-center gap-4">
           <button
+            aria-label={micEnabled ? 'Mute microphone' : 'Unmute microphone'}
             onClick={() => setMicEnabled((v) => !v)}
             className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all scale-100 hover:scale-105 active:scale-95 ${
               micEnabled
@@ -240,6 +242,7 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
           </button>
 
           <button
+            aria-label={cameraEnabled ? 'Turn off camera' : 'Turn on camera'}
             onClick={() => setCameraEnabled((v) => !v)}
             className={`w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all scale-100 hover:scale-105 active:scale-95 ${
               cameraEnabled
