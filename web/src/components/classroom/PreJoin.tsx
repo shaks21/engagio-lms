@@ -41,6 +41,7 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
     selectedAudioInputId,
     getVideoConstraints,
     getAudioConstraints,
+    flipCamera,
   } = useMediaDevices();
 
   useEffect(() => {
@@ -70,7 +71,10 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
           }
           setPreviewStream(s);
         })
-        .catch(() => setError('Unable to access camera'));
+        .catch((err) => {
+          console.warn('[PreJoin] Camera access error:', err);
+          setError('Unable to access camera');
+        });
     } else {
       setPreviewStream((prev) => {
         prev?.getTracks().forEach((t) => t.stop());
@@ -93,7 +97,6 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
     }
   }, [previewStream]);
 
-  // Mic preview with audio-enhancement constraints + gain boost
   useEffect(() => {
     if (!micEnabled || !hasPermission) {
       if (micRafRef.current) cancelAnimationFrame(micRafRef.current);
@@ -109,7 +112,13 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
     let stream: MediaStream | null = null;
 
     const constraints: MediaStreamConstraints = {
-      audio: getAudioConstraints(),
+      audio: {
+        echoCancellation: { ideal: true },
+        noiseSuppression: { ideal: true },
+        autoGainControl: { ideal: true },
+        sampleRate: { ideal: 48000 },
+        channelCount: { ideal: 2 },
+      },
       video: false,
     };
 
@@ -152,11 +161,12 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
       stream?.getTracks().forEach((t) => t.stop());
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [micEnabled, hasPermission, selectedAudioInputId]);
+  }, [micEnabled, hasPermission]);
 
+  // Auto-flip fallback: let browser handle facingMode by itself
   const handleFlipCamera = useCallback(() => {
-    setFacingMode(facingMode === 'user' ? 'environment' : 'user');
-  }, [facingMode, setFacingMode]);
+    flipCamera();
+  }, [flipCamera]);
 
   const handleJoin = useCallback(() => {
     if (previewStream) previewStream.getTracks().forEach((t) => t.stop());
@@ -200,7 +210,7 @@ export default function PreJoin({ roomName, userName, onJoin }: PreJoinProps) {
             </div>
           )}
 
-          {cameraEnabled && videoDevices.length > 1 && (
+          {cameraEnabled && (
             <button
               onClick={handleFlipCamera}
               className="absolute bottom-3 right-3 z-10 w-9 h-9 rounded-full bg-black/60 backdrop-blur-sm

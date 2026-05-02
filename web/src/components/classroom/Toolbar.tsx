@@ -4,8 +4,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, Hand, MessageSquare,
   Smile, PhoneOff, MoreHorizontal, PanelRight, Pin,
-  Settings as SettingsIcon, X, Grid3x3, Focus, Maximize, LogOut,
+  Settings as SettingsIcon, X, Grid3x3, Focus, Maximize, LogOut, Volume2, VolumeOff,
 } from 'lucide-react';
+import { useLoudspeaker } from '@/hooks/useLoudspeaker';
 
 export interface Toast {
   id: string;
@@ -141,6 +142,22 @@ function MoreMenu({
   );
 }
 
+/* ─── Loudspeaker Quick Toggle Button ─── */
+function LoudspeakerButton() {
+  const { isSpeaker, setSpeaker } = useLoudspeaker();
+  return (
+    <TooltipButton
+      onClick={() => setSpeaker(!isSpeaker)}
+      active={isSpeaker}
+      activeClass="bg-engagio-600 hover:bg-engagio-700 text-white ring-2 ring-engagio-400/50"
+      inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"
+      tooltip={isSpeaker ? 'Loudspeaker on' : 'Earpiece mode'}
+    >
+      {isSpeaker ? <Volume2 className="w-5 h-5" /> : <VolumeOff className="w-5 h-5" />}
+    </TooltipButton>
+  );
+}
+
 /* ─── Settings Dialog ─── */
 function SettingsDialog({
   open, onClose, room,
@@ -153,6 +170,7 @@ function SettingsDialog({
   const [audioOutputs, setAudioOutputs] = useState<MediaDeviceInfo[]>([]);
   const [selectedOutputId, setSelectedOutputId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState(true);
+  const { isSpeaker, setSpeaker } = useLoudspeaker();
 
   // Enumerate real audio output devices
   useEffect(() => {
@@ -251,6 +269,22 @@ function SettingsDialog({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Loudspeaker Toggle in Settings */}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-white font-medium">Loudspeaker</p>
+              <p className="text-xs text-gray-500">Route audio to phone speaker (mobile)</p>
+            </div>
+            <button
+              onClick={() => setSpeaker(!isSpeaker)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                isSpeaker ? 'bg-engagio-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
+            >
+              {isSpeaker ? '🔊 Speaker' : '🎧 Earpiece'}
+            </button>
           </div>
 
           <div className="flex items-center justify-between">
@@ -382,6 +416,8 @@ export default function Toolbar({
             <PanelRight className="w-5 h-5" />
           </TooltipButton>
         )}
+
+        <LoudspeakerButton />
 
         <TooltipButton onClick={() => setSettingsOpen(true)} tooltip="Settings"
           inactiveClass="hover:bg-gray-700 text-gray-300 hover:text-white"

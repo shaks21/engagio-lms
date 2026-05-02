@@ -124,13 +124,13 @@ export function useMediaDevices() {
     });
   }, [selectedCameraId, selectedAudioInputId, selectedAudioOutputId, facingMode, audioOutputType, hasPermission]);
 
-  // Build video constraints from selected camera + facing mode
+  // Build video constraints from selected camera + facing mode  
   const getVideoConstraints = useCallback((): MediaTrackConstraints => {
     const base: MediaTrackConstraints = {
-      facingMode: { exact: facingMode },
+      facingMode,
     };
     if (selectedCameraId) {
-      base.deviceId = { exact: selectedCameraId };
+      base.deviceId = selectedCameraId;
     }
     return base;
   }, [facingMode, selectedCameraId]);
@@ -171,6 +171,18 @@ export function useMediaDevices() {
     return 'default';
   }, []);
 
+  // Convenience: flip camera (toggles facingMode + auto-selects matching device)
+  const flipCamera = useCallback(() => {
+    const next = facingMode === 'user' ? 'environment' : 'user';
+    setFacingMode(next);
+    // Try to auto-select a matching device from already-enumerated list
+    const matcher = next === 'user' ? /front|user|face/i : /back|rear|environment|wide/i;
+    const match = videoDevices.find((d) => matcher.test(d.label));
+    if (match) setSelectedCameraId(match.deviceId);
+    else if (videoDevices.length > 0) setSelectedCameraId(videoDevices[0].deviceId);
+    else setSelectedCameraId(null);
+  }, [facingMode, videoDevices]);
+
   return {
     videoDevices,
     audioInputDevices,
@@ -187,6 +199,7 @@ export function useMediaDevices() {
     setSelectedAudioInputId,
     setSelectedAudioOutputId,
     setFacingMode,
+    flipCamera,
     setAudioOutputType,
     getVideoConstraints,
     getAudioConstraints,

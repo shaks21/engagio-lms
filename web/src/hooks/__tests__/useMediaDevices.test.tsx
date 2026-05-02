@@ -108,8 +108,8 @@ describe('useMediaDevices', () => {
 
     const constraints = result.current.getVideoConstraints();
     expect(constraints).toEqual({
-      facingMode: { exact: 'environment' },
-      deviceId: { exact: 'cam-back' },
+      facingMode: 'environment',
+      deviceId: 'cam-back',
     });
   });
 
