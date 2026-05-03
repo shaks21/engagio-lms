@@ -197,34 +197,39 @@ function SettingsDialog({
 
   const handleSwitchCamera = useCallback(async (facing: 'user' | 'environment') => {
     setCameraFacing(facing);
-    if (!room?.switchActiveDevice) {
+    const localParticipant = room?.localParticipant;
+    if (!localParticipant?.setCameraEnabled) {
       onToast?.({ id: Date.now().toString(), message: 'Camera switching not available', type: 'warning' });
       return;
     }
 
-    // ── 1. Stop existing video tracks to free the device ──
+    // ── 1. Stop publishing video to fully release the device lock ──
     try {
-      const localPub = room.localParticipant?.getTrackPublication?.('video');
-      if (localPub?.track?.stop) {
-        localPub.track.stop();
-        console.log('[Camera] Stopped existing video track before switching');
-      }
-    } catch {
-      // ignore
+      await localParticipant.setCameraEnabled(false);
+      console.log('[Camera] Stopped video publication before switching');
+    } catch (stopErr) {
+      console.warn('[Camera] Stop before switch failed (non-fatal):', stopErr);
     }
 
-    // ── 2. Attempt switch to requested facingMode ──
+    // ── 2. Wait for OS to release the camera device (mobile needs this) ──
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // ── 3. Republish with the desired facingMode (RELAXED ideal constraint) ──
     try {
-      await room.switchActiveDevice('videoinput', undefined, true, { facingMode: facing });
+      await localParticipant.setCameraEnabled(true, {
+        facingMode: { ideal: facing },
+      });
       console.log(`[Camera] Switched to ${facing} successfully`);
     } catch (err: any) {
-      console.warn('[Camera] Switch failed, attempting fallback:', err);
+      console.warn('[Camera] Republish with facing failed, attempting fallback:', err);
 
-      // ── 3. Hardware Fallback: revert to 'user' if 'environment' fails ──
+      // ── 4. Hardware Fallback: revert to 'user' if 'environment' fails ──
       if (facing === 'environment') {
         try {
           setCameraFacing('user');
-          await room.switchActiveDevice('videoinput', undefined, true, { facingMode: 'user' });
+          await localParticipant.setCameraEnabled(true, {
+            facingMode: { ideal: 'user' },
+          });
           console.log('[Camera] Fallback to user succeeded');
           onToast?.({ id: Date.now().toString(), message: 'Rear camera unavailable — switched to front', type: 'warning' });
         } catch (fallbackErr: any) {

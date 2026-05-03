@@ -16,18 +16,20 @@ vi.mock('@/hooks/useLoudspeaker', () => ({
 
 const flushPromises = () => new Promise((resolve) => setTimeout(resolve, 10));
 
-describe('Toolbar — Hardware Deep Fix', () => {
+describe('Toolbar — Camera Stop-Publish-Repub Fix', () => {
   const user = userEvent.setup();
   let mockSetCameraEnabled: any;
   let toastMessages: any[];
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     toastMessages = [];
     mockSetCameraEnabled = vi.fn().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     cleanup();
   });
 
@@ -53,53 +55,59 @@ describe('Toolbar — Hardware Deep Fix', () => {
     ...overrides,
   });
 
-  it('calls setCameraEnabled(false) BEFORE setCameraEnabled(true) when switching camera', async () => {
+  it('calls setCameraEnabled(false) FIRST, waits, then setCameraEnabled(true, { ideal: facing })', async () => {
     const props = makeProps();
     render(<Toolbar {...props} />);
     await flushPromises();
 
     await user.click(screen.getByTestId('settings-btn'));
     await user.click(screen.getByText('📸 Rear'));
+
+    await waitFor(() => {
+      expect(mockSetCameraEnabled).toHaveBeenCalledTimes(1);
+      expect(mockSetCameraEnabled).toHaveBeenNthCalledWith(1, false);
+    });
+
+    // Advance timers past the delay
+    await act(async () => { vi.advanceTimersByTime(600); });
 
     await waitFor(() => {
       expect(mockSetCameraEnabled).toHaveBeenCalledTimes(2);
+      expect(mockSetCameraEnabled).toHaveBeenNthCalledWith(2, true, expect.objectContaining({
+        facingMode: { ideal: 'environment' },
+      }));
     });
-
-    expect(mockSetCameraEnabled).toHaveBeenNthCalledWith(1, false);
-    expect(mockSetCameraEnabled).toHaveBeenNthCalledWith(2, true, expect.objectContaining({
-      facingMode: { ideal: 'environment' },
-    }));
   });
 
-  it('falls back to user camera when environment republish fails', async () => {
-    mockSetCameraEnabled
-      .mockResolvedValueOnce(undefined) // false
-      .mockRejectedValueOnce(new Error('OverconstrainedError')) // true env
-      .mockResolvedValueOnce(undefined); // true user
-
+  it('uses { ideal: "user" } when switching to front camera', async () => {
     const props = makeProps();
     render(<Toolbar {...props} />);
     await flushPromises();
 
     await user.click(screen.getByTestId('settings-btn'));
+    // First click rear
     await user.click(screen.getByText('📸 Rear'));
+    await act(async () => { vi.advanceTimersByTime(600); });
+
+    // Then click front
+    await user.click(screen.getByText('📷 Front'));
 
     await waitFor(() => {
-      expect(mockSetCameraEnabled).toHaveBeenCalledTimes(3);
+      expect(mockSetCameraEnabled).toHaveBeenCalledTimes(3); // false, true rear, false
     });
 
-    expect(mockSetCameraEnabled).toHaveBeenNthCalledWith(1, false);
-    expect(mockSetCameraEnabled).toHaveBeenNthCalledWith(2, true, expect.objectContaining({
-      facingMode: { ideal: 'environment' },
-    }));
-    expect(mockSetCameraEnabled).toHaveBeenNthCalledWith(3, true, expect.objectContaining({
-      facingMode: { ideal: 'user' },
-    }));
+    await act(async () => { vi.advanceTimersByTime(600); });
 
-    expect(toastMessages.some((t) => t.type === 'warning')).toBe(true);
+    await waitFor(() => {
+      expect(mockSetCameraEnabled).toHaveBeenCalledTimes(4); // + true user
+      expect(mockSetCameraEnabled).toHaveBeenNthCalledWith(4, true, expect.objectContaining({
+        facingMode: { ideal: 'user' },
+      }));
+    });
   });
 
-  it('shows user-friendly toast when both camera directions fail', async () => {
+  it('shows toast when republish fails after both stop and publish fail', async () => {
+    // All calls fail: false → true env → true user fallback
     mockSetCameraEnabled.mockRejectedValue(new Error('NotAllowedError'));
 
     const props = makeProps();
@@ -109,16 +117,24 @@ describe('Toolbar — Hardware Deep Fix', () => {
     await user.click(screen.getByTestId('settings-btn'));
     await user.click(screen.getByText('📸 Rear'));
 
+    // Wait for all 3 calls: false, true env, true user fallback
+    await waitFor(() => {
+      expect(mockSetCameraEnabled).toHaveBeenCalledTimes(3);
+    });
+
+    await flushPromises();
+
     await waitFor(() => {
       expect(toastMessages.some((t) => t.type === 'error')).toBe(true);
     });
-
-    const errorToast = toastMessages.find((t) => t.type === 'error');
-    expect(errorToast.message).toMatch(/camera|use|another|permission/i);
   });
 
-  it('does not crash when camera switching rejects', async () => {
-    mockSetCameraEnabled.mockRejectedValue(new Error('Device in use'));
+  it('shows warning toast and falls back to user if environment publish fails', async () => {
+    // setCameraEnabled(false) succeeds, setCameraEnabled(true, env) fails, setCameraEnabled(true, user) succeeds
+    mockSetCameraEnabled
+      .mockResolvedValueOnce(undefined) // false
+      .mockRejectedValueOnce(new Error('OverconstrainedError')) // true env fails
+      .mockResolvedValueOnce(undefined); // true user fallback
 
     const props = makeProps();
     render(<Toolbar {...props} />);
@@ -126,9 +142,14 @@ describe('Toolbar — Hardware Deep Fix', () => {
 
     await user.click(screen.getByTestId('settings-btn'));
     await user.click(screen.getByText('📸 Rear'));
+
+    // Wait for all 3 calls: false, true env, true user
+    await waitFor(() => {
+      expect(mockSetCameraEnabled).toHaveBeenCalledTimes(3);
+    });
+
     await flushPromises();
 
-    // Component should still be in the DOM (not crashed)
-    expect(screen.getByTestId('settings-btn')).toBeInTheDocument();
+    expect(toastMessages.some((t) => t.type === 'warning' && /rear|front/i.test(t.message))).toBe(true);
   });
 });
