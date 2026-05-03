@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback } from 'react';
-import { X, Minus, Plus, Bot, Hand, Users, Check, Loader, LogIn } from 'lucide-react';
+import { X, Plus, Bot, Hand, Users, Check, Loader } from 'lucide-react';
 
 /* ─── types ─── */
 interface Student {
@@ -296,35 +296,37 @@ export default function CreateBreakoutModal({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Room count stepper */}
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-gray-300">Number of rooms:</span>
-            <div className="flex items-center gap-3 bg-gray-800 rounded-full px-4 py-2 border border-gray-700">
-              <button
-                data-testid="room-count-minus"
-                onClick={() => setRoomCount((c) => Math.max(1, c - 1))}
-                disabled={roomCount <= 1}
-                className="w-7 h-7 rounded-full bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-white transition-colors"
-              >
-                <Minus className="w-3.5 h-3.5" />
-              </button>
-              <span data-testid="room-count-value" className="text-sm font-semibold text-white w-6 text-center">
-                {roomCount}
-              </span>
-              <button
-                data-testid="room-count-plus"
-                onClick={() => setRoomCount((c) => Math.min(MAX_ROOMS, c + 1))}
-                disabled={roomCount >= MAX_ROOMS}
-                className="w-7 h-7 rounded-full bg-gray-700 hover:bg-gray-600 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-white transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5" />
-              </button>
+          {/* Room count dropdown (1–25) */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-sm font-medium text-gray-300">Number of rooms:</span>
+              <div className="relative">
+                <select
+                  data-testid="breakout-room-count"
+                  value={roomCount}
+                  onChange={(e) => setRoomCount(Number(e.target.value))}
+                  className="appearance-none bg-gray-800 border border-gray-700 rounded-lg pl-3 pr-8 py-2 text-sm font-semibold text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent cursor-pointer min-w-[220px]"
+                >
+                  {Array.from({ length: MAX_ROOMS }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {getRoomAllocationLabel(n, studentCount)}
+                    </option>
+                  ))}
+                </select>
+                <svg
+                  className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
             </div>
-          </div>
-
-          {/* Allocation summary */}
-          <div data-testid="allocation-summary" className="text-xs text-gray-500">
-            {getRoomAllocationLabel(roomCount, studentCount)}
+            {/* Capacity hint below */}
+            <div data-testid="room-capacity-hint" className="text-xs text-gray-500">
+              {getRoomAllocationLabel(roomCount, studentCount)}
+            </div>
           </div>
 
           {/* Mode selector cards */}

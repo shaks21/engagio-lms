@@ -45,69 +45,53 @@ describe('CreateBreakoutModal', () => {
     expect(screen.getByTestId('modal-close-btn')).toBeInTheDocument();
   });
 
-  it('defaults to 2 rooms with stepper showing current count', async () => {
+  it('defaults to currentRoomCount in the dropdown', async () => {
     await act(async () => {
       render(<CreateBreakoutModal {...defaultProps} />);
       await flushPromises();
     });
 
-    expect(screen.getByTestId('room-count-value')).toHaveTextContent('2');
+    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
+    expect(select.value).toBe('2');
   });
 
-  it('increments room count when + clicked', async () => {
+  it('increments room count via dropdown selection', async () => {
     await act(async () => {
       render(<CreateBreakoutModal {...defaultProps} />);
       await flushPromises();
     });
 
-    const plusBtn = screen.getByTestId('room-count-plus');
-    await user.click(plusBtn);
+    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
+    await user.selectOptions(select, '3');
 
     await waitFor(() => {
-      expect(screen.getByTestId('room-count-value')).toHaveTextContent('3');
+      expect(select.value).toBe('3');
     });
   });
 
-  it('decrements room count when – clicked', async () => {
-    await act(async () => {
-      render(<CreateBreakoutModal {...defaultProps} />);
-      await flushPromises();
-    });
-
-    const minusBtn = screen.getByTestId('room-count-minus');
-    await user.click(minusBtn);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('room-count-value')).toHaveTextContent('1');
-    });
-  });
-
-  it('does not decrement below 1', async () => {
+  it('does not decrement below 1 (dropdown option 1 exists)', async () => {
     await act(async () => {
       render(<CreateBreakoutModal {...defaultProps} currentRoomCount={1} />);
       await flushPromises();
     });
 
-    const minusBtn = screen.getByTestId('room-count-minus');
-    await user.click(minusBtn);
+    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
+    expect(select.value).toBe('1');
 
-    await waitFor(() => {
-      expect(screen.getByTestId('room-count-value')).toHaveTextContent('1');
-    });
+    const options = Array.from(select.querySelectorAll('option'));
+    expect(options[0].value).toBe('1');
   });
 
-  it('does not increment above 25', async () => {
+  it('does not offer above 25 (max options capped)', async () => {
     await act(async () => {
       render(<CreateBreakoutModal {...defaultProps} currentRoomCount={25} />);
       await flushPromises();
     });
 
-    const plusBtn = screen.getByTestId('room-count-plus');
-    await user.click(plusBtn);
-
-    await waitFor(() => {
-      expect(screen.getByTestId('room-count-value')).toHaveTextContent('25');
-    });
+    const select = screen.getByTestId('breakout-room-count') as HTMLSelectElement;
+    const options = Array.from(select.querySelectorAll('option'));
+    expect(options.length).toBe(25);
+    expect(select.value).toBe('25');
   });
 
   it('shows three allocation mode cards: Auto, Manual, Self-Select', async () => {
@@ -245,7 +229,7 @@ describe('CreateBreakoutModal', () => {
     });
 
     // 4 students, 2 rooms => 2 each
-    expect(screen.getByTestId('allocation-summary')).toBeInTheDocument();
-    expect(screen.getByTestId('allocation-summary').textContent).toMatch(/4/);
+    expect(screen.getByTestId('room-capacity-hint')).toBeInTheDocument();
+    expect(screen.getByTestId('room-capacity-hint').textContent).toMatch(/4/);
   });
 });
