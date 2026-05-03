@@ -214,22 +214,43 @@ function SettingsDialog({
     // ── 2. Wait for OS to release the camera device (mobile needs this) ──
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // ── 3. Republish with the desired facingMode (RELAXED ideal constraint) ──
+    // ── 3. Enumerate devices to find exact hardware ID ──
+    let constraints: any = { facingMode: { ideal: facing } };
     try {
-      await localParticipant.setCameraEnabled(true, {
-        facingMode: { ideal: facing },
-      });
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices?.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter((d) => d.kind === 'videoinput');
+        console.log('[Camera] Enumerated', videoDevices.length, 'video device(s):',
+          videoDevices.map((d) => `${d.label}(${d.deviceId.slice(0,6)}...)`).join(', '));
+
+        const matcher = facing === 'environment'
+          ? /back|rear|environment|0/i
+          : /front|face|user|1/i;
+
+        const matched = videoDevices.find((d) => matcher.test(d.label));
+        if (matched && matched.deviceId) {
+          constraints = { deviceId: { exact: matched.deviceId } };
+          console.log(`[Camera] Matched exact ${facing} device: ${matched.label} (${matched.deviceId.slice(0, 8)}...)`);
+        } else {
+          console.warn('[Camera] No device label matched for', facing, '- falling back to ideal facingMode');
+        }
+      }
+    } catch (enumErr) {
+      console.warn('[Camera] enumerateDevices failed, falling back to ideal facingMode:', enumErr);
+    }
+
+    // ── 4. Republish with the discovered/exact constraint ──
+    try {
+      await localParticipant.setCameraEnabled(true, constraints);
       console.log(`[Camera] Switched to ${facing} successfully`);
     } catch (err: any) {
-      console.warn('[Camera] Republish with facing failed, attempting fallback:', err);
+      console.warn('[Camera] Republish with exact constraint failed, attempting fallback:', err);
 
-      // ── 4. Hardware Fallback: revert to 'user' if 'environment' fails ──
+      // ── 5. Hardware Fallback: revert to 'user' if 'environment' fails ──
       if (facing === 'environment') {
         try {
           setCameraFacing('user');
-          await localParticipant.setCameraEnabled(true, {
-            facingMode: { ideal: 'user' },
-          });
+          await localParticipant.setCameraEnabled(true, { facingMode: { ideal: 'user' } });
           console.log('[Camera] Fallback to user succeeded');
           onToast?.({ id: Date.now().toString(), message: 'Rear camera unavailable — switched to front', type: 'warning' });
         } catch (fallbackErr: any) {
